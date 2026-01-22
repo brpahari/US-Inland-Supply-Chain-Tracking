@@ -2,8 +2,8 @@
 """
 backfill_risk.py
 Reconstructs the last 90 days of Risk Scores using:
-1. Real historical River data (USGS Daily Values API)
-2. Your local Rail/Barge history CSVs
+1. Real historical River data (USGS Daily Values API) with robust fallbacks.
+2. Your local Rail/Barge history CSVs.
 """
 
 import pandas as pd
@@ -20,25 +20,50 @@ RAIL_FILE = "data/history/rail_weekly.csv"
 BARGE_FILE = "data/history/barge_locks27_weekly.csv"
 
 def fetch_river_history():
-    """Get daily mean stage for St. Louis (last 120 days to cover deltas)"""
+    """
+    Get daily stage for St. Louis.
+    Robustness: Tries Mean (00003), then Min (00002), then Max (00001).
+    St. Louis often does not publish Mean stage, only Min/Max.
+    """
     print("Fetching USGS river history...")
     url = "https://waterservices.usgs.gov/nwis/dv/"
-    params = {
-        "format": "json",
-        "sites": ST_LOUIS_SITE,
-        "period": f"P{DAYS_BACK + 20}D", # Extra buffer
-        "parameterCd": "00065", # Gage Height
-        "statCd": "00003"       # Mean
-    }
-    r = requests.get(url, params=params)
-    data = r.json()
     
-    # Create dict: {'2023-10-01': 2.5, ...}
-    hist = {}
-    ts = data['value']['timeSeries'][0]['values'][0]['value']
-    for p in ts:
-        hist[p['dateTime'][:10]] = float(p['value'])
-    return hist
+    # Priority: Mean -> Min (Conservative for Low Water) -> Max
+    stats_to_try = ["00003", "00002", "00001"]
+    
+    for stat in stats_to_try:
+        params = {
+            "format": "json",
+            "sites": ST_LOUIS_SITE,
+            "period": f"P{DAYS_BACK + 20}D", # Extra buffer
+            "parameterCd": "00065", # Gage Height
+            "statCd": stat
+        }
+        try:
+            r = requests.get(url, params=params, timeout=30)
+            if r.status_code != 200:
+                continue
+            
+            data = r.json()
+            # Check if timeSeries list is empty (The cause of previous crash)
+            if not data.get('value', {}).get('timeSeries'):
+                continue
+                
+            # Success
+            print(f"  Success: Found data using statCd={stat}")
+            hist = {}
+            ts = data['value']['timeSeries'][0]['values'][0]['value']
+            for p in ts:
+                # p['value'] is string "12.34", parse to float
+                hist[p['dateTime'][:10]] = float(p['value'])
+            return hist
+            
+        except Exception as e:
+            print(f"  Error fetching stat {stat}: {e}")
+            continue
+            
+    print("WARNING: Could not fetch river history from USGS (all stats failed). Risk scores will lack river component.")
+    return {}
 
 def get_as_of(df, date_str, val_col):
     """Find the latest known value on or before date_str"""
@@ -54,12 +79,15 @@ def compute_daily_risk(target_date, river_hist, rail_df, barge_df):
     # 1. RIVER INPUTS
     # Current Level
     r_val = river_hist.get(date_s)
-    if r_val is None: return None # No river data for this day
     
     # 7-Day Delta
     prev_dt = target_date - timedelta(days=7)
     r_prev = river_hist.get(prev_dt.strftime("%Y-%m-%d"))
-    r_delta = (r_val - r_prev) if r_prev is not None else 0.0
+    
+    if r_val is not None and r_prev is not None:
+        r_delta = r_val - r_prev
+    else:
+        r_delta = 0.0
     
     # 2. RAIL INPUTS (4-week Delta)
     # Look up what we knew on that date vs 28 days prior
@@ -77,9 +105,11 @@ def compute_daily_risk(target_date, river_hist, rail_df, barge_df):
     
     # River Score
     r_score = 0
-    if r_delta < -2.0: r_score += 20
-    if r_val < 0.0: r_score += 20
-    if r_score > 0: drivers.append(("river", r_score))
+    # Only score river if we successfully fetched data
+    if r_val is not None:
+        if r_delta < -2.0: r_score += 20
+        if r_val < 0.0: r_score += 20
+        if r_score > 0: drivers.append(("river", r_score))
 
     # Rail Score
     rr_score = 0
@@ -87,7 +117,7 @@ def compute_daily_risk(target_date, river_hist, rail_df, barge_df):
     elif rail_delta > 0.5: rr_score += 15
     if rr_score > 0: drivers.append(("rail", rr_score))
 
-    # Barge Score
+    # Barge Score (Count Logic)
     b_score = 0
     if barge_delta < -50: b_score += 30
     elif barge_delta < -20: b_score += 15
@@ -111,16 +141,23 @@ def main():
     
     rail_df = pd.DataFrame()
     if os.path.exists(RAIL_FILE):
-        rail_df = pd.read_csv(RAIL_FILE)
-        # Filter UP only
-        rail_df = rail_df[rail_df['carrier'] == 'UP'].sort_values('week_end_date')
+        try:
+            rail_df = pd.read_csv(RAIL_FILE)
+            # Filter UP only
+            if 'carrier' in rail_df.columns:
+                rail_df = rail_df[rail_df['carrier'] == 'UP'].sort_values('week_end_date')
+        except Exception as e:
+            print(f"Warning reading rail file: {e}")
 
     barge_df = pd.DataFrame()
     if os.path.exists(BARGE_FILE):
-        barge_df = pd.read_csv(BARGE_FILE).sort_values('week_end_date')
-        # Ensure column name
-        if 'total_barges' not in barge_df.columns and 'total_tons' in barge_df.columns:
-            barge_df['total_barges'] = barge_df['total_tons']
+        try:
+            barge_df = pd.read_csv(BARGE_FILE).sort_values('week_end_date')
+            # Ensure column name compatibility (legacy 'tons' vs new 'barges')
+            if 'total_barges' not in barge_df.columns and 'total_tons' in barge_df.columns:
+                barge_df['total_barges'] = barge_df['total_tons']
+        except Exception as e:
+             print(f"Warning reading barge file: {e}")
 
     # Generate
     rows = []
