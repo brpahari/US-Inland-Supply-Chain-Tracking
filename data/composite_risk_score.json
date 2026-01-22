@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-22T07:36:02.891497Z",
+  "generated_at_utc": "2026-01-22T07:43:25.924502Z",
   "risk_score": 40.0,
   "risk_level": "LOW",
   "primary_driver": "river",
@@ -8,7 +8,7 @@
       "name": "river",
       "score": 40.0,
       "raw": {
-        "delta_7d_ft": -5.800000000000001,
+        "delta_7d_ft": -5.3100000000000005,
         "latest_stage_ft": -2.45
       }
     },
@@ -23,7 +23,7 @@
       "name": "barge",
       "score": 0.0,
       "raw": {
-        "locks27_delta_4w_tons": -173.0
+        "locks27_delta_4w_tons": -172.0
       }
     }
   ]
