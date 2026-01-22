@@ -4,66 +4,46 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
 
-  <title>Mississippi River Level Dashboard, Locks 27 Barge Traffic, Rail Congestion, US Inland Logistics Risk</title>
-
-  <meta name="description" content="US inland logistics risk dashboard for Mississippi River water levels at St Louis and Memphis, barge traffic volume at Locks 27, rail congestion metrics for Union Pacific and BNSF, and an early warning supply chain disruption risk score." />
-  <meta name="keywords" content="Mississippi River level, St Louis river stage, Memphis river stage, USGS gauge height, river discharge cfs, Locks 27 barge traffic, barge volume USDA, inland logistics dashboard, supply chain risk score, rail congestion metrics, Union Pacific dwell time, BNSF train speed, inland freight disruption" />
+  <title>Mississippi River Water Level, Locks 27 Barge Traffic, Rail Congestion, US Inland Logistics Risk Dashboard</title>
+  <meta name="description" content="US inland freight early warning dashboard. Tracks Mississippi River stage and discharge, Locks 27 barge traffic, and Class I rail congestion to estimate supply chain risk for grain and bulk commodities." />
+  <meta name="keywords" content="Mississippi River water level, river stage, river discharge, Locks 27 barge traffic, barge volumes, inland logistics, grain transportation, rail congestion, Union Pacific dwell, BNSF train speed, supply chain risk dashboard" />
 
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #0b0f14; color: #e7eef7; }
-    .wrap { max-width: 1160px; margin: 0 auto; padding: 22px; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 22px; }
     h1 { font-size: 22px; margin: 0 0 6px 0; }
-    .sub { opacity: 0.85; font-size: 13px; margin-bottom: 18px; line-height: 1.35; }
+    h2 { font-size: 15px; margin: 0 0 10px 0; opacity: 0.95; }
+    .sub { opacity: 0.8; font-size: 13px; margin-bottom: 18px; }
     .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
     .card { background: #111926; border: 1px solid #1f2a3a; border-radius: 12px; padding: 14px; }
-
     .span-12 { grid-column: span 12; }
     .span-8 { grid-column: span 8; }
     .span-6 { grid-column: span 6; }
     .span-4 { grid-column: span 4; }
     .span-3 { grid-column: span 3; }
-
-    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
-    .muted { opacity: 0.82; font-size: 12px; }
-    .note { opacity: 0.9; font-size: 12px; line-height: 1.35; }
-    a { color: #9cc7ff; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-
     .kpi { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
-    .kpi .label { opacity: 0.78; font-size: 12px; }
-    .kpi .value { font-size: 26px; font-weight: 750; letter-spacing: 0.2px; }
-    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 750; border: 1px solid transparent; }
+    .kpi .label { opacity: 0.75; font-size: 12px; }
+    .kpi .value { font-size: 26px; font-weight: 700; letter-spacing: 0.3px; }
+    .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 650; border: 1px solid transparent; }
     .pill.low { background: rgba(32, 180, 84, 0.12); border-color: rgba(32, 180, 84, 0.35); color: #6ee7a8; }
     .pill.moderate { background: rgba(255, 196, 0, 0.12); border-color: rgba(255, 196, 0, 0.35); color: #ffd36b; }
     .pill.critical { background: rgba(255, 79, 79, 0.12); border-color: rgba(255, 79, 79, 0.35); color: #ff9a9a; }
-
-    .controls { display: flex; gap: 10px; flex-wrap: wrap; }
-    select, button {
-      background: #0e1520; color: #e7eef7; border: 1px solid #1f2a3a;
-      border-radius: 10px; padding: 8px 10px; font-size: 13px;
-    }
-    button { cursor: pointer; }
-
-    .badges { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .badge {
-      display: inline-flex; gap: 6px; align-items: center;
-      padding: 6px 10px; border-radius: 999px; font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.06);
-      opacity: 0.95;
-    }
-    .dot { width: 8px; height: 8px; border-radius: 999px; background: #6ee7a8; }
-    .dot.warn { background: #ffd36b; }
-    .dot.bad { background: #ff9a9a; }
-
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+    .muted { opacity: 0.8; font-size: 12px; }
+    a { color: #9cc7ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
     .table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .table th, .table td { padding: 10px 8px; border-bottom: 1px solid #1f2a3a; text-align: left; vertical-align: top; }
-    .table th { opacity: 0.8; font-weight: 650; }
-    .warnTxt { color: #ffd36b; }
-
+    .table th, .table td { padding: 10px 8px; border-bottom: 1px solid #1f2a3a; text-align: left; }
+    .table th { opacity: 0.75; font-weight: 600; }
+    .warn { color: #ffd36b; }
+    .ok { color: #6ee7a8; }
+    .bad { color: #ff9a9a; }
     canvas { width: 100% !important; height: 320px !important; }
     .smallcanvas { height: 220px !important; }
-
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; }
+    select, button { background: #0e1520; color: #e7eef7; border: 1px solid #1f2a3a; border-radius: 10px; padding: 8px 10px; font-size: 13px; }
+    button { cursor: pointer; }
+    .note { margin-top: 8px; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
     @media (max-width: 950px) {
       .span-8, .span-6, .span-4, .span-3 { grid-column: span 12; }
       canvas { height: 280px !important; }
@@ -75,38 +55,19 @@
   <div class="wrap">
     <div class="row">
       <div>
-        <h1>Mississippi River Level Dashboard and US Inland Logistics Risk Monitor</h1>
+        <h1>US Inland Logistics Risk Monitor</h1>
         <div class="sub">
-          Early warning supply chain dashboard for Mississippi River water levels, barge traffic volume at Locks 27, rail congestion metrics, and a composite inland freight disruption risk score.
+          Mississippi River water level and discharge, Locks 27 barge traffic, and rail congestion signals for inland freight and grain supply chain risk
         </div>
       </div>
       <div class="muted" id="updated"></div>
     </div>
 
     <div class="grid">
-      <div class="card span-12">
-        <div class="row">
-          <div class="badges" id="healthBadges"></div>
-          <div class="muted">
-            Data links
-            <a href="data/composite_risk_score.json" target="_blank" rel="noreferrer">risk json</a>
-            <span> </span>
-            <a href="data/river_status.json" target="_blank" rel="noreferrer">river json</a>
-            <span> </span>
-            <a href="data/barge_status.json" target="_blank" rel="noreferrer">barge json</a>
-            <span> </span>
-            <a href="data/rail_status.json" target="_blank" rel="noreferrer">rail json</a>
-          </div>
-        </div>
-        <div class="note" style="margin-top:10px;">
-          River stage is reported in feet relative to the gauge datum. Negative values can be normal for some gauges. Use the 7 day change and discharge trend to interpret risk.
-        </div>
-      </div>
-
       <div class="card span-3">
         <div class="kpi">
           <div>
-            <div class="label">Supply chain risk score 0 to 100</div>
+            <div class="label">Supply chain risk score</div>
             <div class="value" id="riskScore">–</div>
           </div>
           <div id="riskPill" class="pill low">LOW</div>
@@ -117,42 +78,40 @@
       <div class="card span-3">
         <div class="kpi">
           <div>
-            <div class="label">St Louis river stage feet</div>
+            <div class="label" id="riverKpiLabel">St Louis river stage</div>
             <div class="value" id="stlStage">–</div>
           </div>
         </div>
-        <div class="muted" id="stlDelta">7 day change –</div>
+        <div class="muted" id="stlDelta">7 day delta –</div>
       </div>
 
       <div class="card span-3">
         <div class="kpi">
           <div>
-            <div class="label">Locks 27 barge volume tons</div>
+            <div class="label">Locks 27 barge traffic</div>
             <div class="value" id="locksVal">–</div>
           </div>
         </div>
-        <div class="muted" id="locksDelta">4 week change –</div>
+        <div class="muted" id="locksDelta">4 week delta –</div>
       </div>
 
       <div class="card span-3">
         <div class="kpi">
           <div>
-            <div class="label">Union Pacific terminal dwell</div>
+            <div class="label">UP terminal dwell change</div>
             <div class="value" id="upDwellDelta">–</div>
           </div>
         </div>
-        <div class="muted">4 week change hours</div>
+        <div class="muted">4 week delta hours</div>
       </div>
 
       <div class="card span-8">
         <div class="row">
-          <div style="font-weight:750;">
-            Mississippi River trend for barge draft restrictions and inland shipping disruption
-          </div>
+          <div style="font-weight:700;">Mississippi River trend</div>
           <div class="controls">
             <select id="riverSite">
-              <option value="st_louis_mo">St Louis Missouri river gauge</option>
-              <option value="memphis_tn">Memphis Tennessee river gauge</option>
+              <option value="st_louis_mo">St Louis Missouri</option>
+              <option value="memphis_tn">Memphis Tennessee</option>
             </select>
             <select id="riverMetric">
               <option value="gage_height_ft">River stage feet</option>
@@ -161,29 +120,38 @@
             <button id="refreshBtn">Refresh</button>
           </div>
         </div>
-        <div class="muted" style="margin-top:6px;" id="riverSub">USGS time series last 7 days</div>
+
+        <div class="muted" style="margin-top:6px;">Plots the 7 day time series from river_status.json</div>
         <canvas id="riverChart"></canvas>
+        <div class="note muted" id="riverNote" style="display:none;"></div>
       </div>
 
       <div class="card span-4">
-        <div style="font-weight:750;">Risk drivers for inland freight disruption</div>
-        <div class="muted" style="margin-top:6px;">Points contribution to composite risk score</div>
+        <div style="font-weight:700;">Risk driver breakdown</div>
+        <div class="muted" style="margin-top:6px;">Points contribution to total risk score</div>
         <canvas id="driverChart" class="smallcanvas"></canvas>
-        <div class="note" style="margin-top:10px;">
-          River points are based on 7 day change and absolute stage. Barge points reflect Locks 27 trend. Rail points reflect terminal dwell changes.
+        <div class="muted" style="margin-top:10px;">
+          Data feeds
+          <a href="data/composite_risk_score.json" target="_blank" rel="noreferrer">risk json</a>
+          <span> </span>
+          <a href="data/river_status.json" target="_blank" rel="noreferrer">river json</a>
+          <span> </span>
+          <a href="data/barge_status.json" target="_blank" rel="noreferrer">barge json</a>
+          <span> </span>
+          <a href="data/rail_status.json" target="_blank" rel="noreferrer">rail json</a>
         </div>
       </div>
 
       <div class="card span-6">
-        <div style="font-weight:750;">Locks 27 barge traffic history</div>
-        <div class="muted" style="margin-top:6px;">Weekly series from USDA grain transportation report</div>
+        <div style="font-weight:700;">Locks 27 history</div>
+        <div class="muted" style="margin-top:6px;">Filters out trailing zero values for plotting</div>
         <canvas id="locksChart" class="smallcanvas"></canvas>
       </div>
 
       <div class="card span-6">
-        <div style="font-weight:750;">Rail service congestion history</div>
+        <div style="font-weight:700;">Rail history</div>
         <div class="row" style="margin-top:6px;">
-          <div class="muted">Weekly series from STB rail service metrics</div>
+          <div class="muted">From rail_weekly.csv</div>
           <div class="controls">
             <select id="railCarrier">
               <option value="UP">Union Pacific</option>
@@ -191,7 +159,7 @@
             </select>
             <select id="railMetric">
               <option value="terminal_dwell_hours">Terminal dwell hours</option>
-              <option value="train_speed_mph">Train speed miles per hour</option>
+              <option value="train_speed_mph">Average train speed mph</option>
             </select>
           </div>
         </div>
@@ -200,8 +168,8 @@
 
       <div class="card span-12">
         <div class="row">
-          <div style="font-weight:750;">Latest signals and data audit</div>
-          <div class="muted">Fast check for risk logic inputs, freshness, and missing data</div>
+          <div style="font-weight:700;">Latest signals</div>
+          <div class="muted">Quick audit view</div>
         </div>
         <table class="table" id="signalsTable"></table>
       </div>
@@ -211,8 +179,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 
   <script>
-    const fmt2 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
-    const fmt0 = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
+    const fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
 
     function pillFor(level) {
       const el = document.getElementById("riskPill");
@@ -221,39 +188,6 @@
       if (up === "CRITICAL") { el.classList.add("critical"); el.textContent = "CRITICAL"; return; }
       if (up === "MODERATE") { el.classList.add("moderate"); el.textContent = "MODERATE"; return; }
       el.classList.add("low"); el.textContent = "LOW";
-    }
-
-    function safeNum(x) {
-      const v = Number(x);
-      return Number.isFinite(v) ? v : null;
-    }
-
-    function hoursAgo(iso) {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return null;
-      return (Date.now() - d.getTime()) / 36e5;
-    }
-
-    function freshnessDot(hours) {
-      if (hours == null) return { cls: "bad", text: "unknown" };
-      if (hours <= 36) return { cls: "", text: fmt2.format(hours) + "h" };
-      if (hours <= 168) return { cls: "warn", text: fmt2.format(hours) + "h" };
-      return { cls: "bad", text: fmt2.format(hours) + "h" };
-    }
-
-    function setBadges(items) {
-      const el = document.getElementById("healthBadges");
-      el.innerHTML = "";
-      for (const it of items) {
-        const dot = freshnessDot(it.hours);
-        const b = document.createElement("div");
-        b.className = "badge";
-        b.innerHTML =
-          "<span class='dot " + dot.cls + "'></span>" +
-          "<span style='font-weight:750;'>" + it.label + "</span>" +
-          "<span class='muted'>updated " + dot.text + " ago</span>";
-        el.appendChild(b);
-      }
     }
 
     async function getJson(path) {
@@ -282,13 +216,38 @@
       return rows;
     }
 
-    const charts = {};
+    function asNum(x) {
+      const v = Number(x);
+      return Number.isFinite(v) ? v : null;
+    }
+
+    function lastNonZero(points) {
+      for (let i = points.length - 1; i >= 0; i--) {
+        if (points[i].v != null && points[i].v !== 0) return points[i];
+      }
+      return null;
+    }
+
+    function toShortTime(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso);
+      return d.toISOString().slice(0, 10);
+    }
+
+    let charts = {
+      riverChart: null,
+      driverChart: null,
+      locksChart: null,
+      railChart: null,
+    };
 
     function makeLineChart(canvasId, labels, data, label) {
       const ctx = document.getElementById(canvasId);
-      if (charts[canvasId]) charts[canvasId].destroy();
+      const old = charts[canvasId];
+      if (old) old.destroy();
 
-      charts[canvasId] = new Chart(ctx, {
+      const c = new Chart(ctx, {
         type: "line",
         data: {
           labels,
@@ -298,7 +257,6 @@
             tension: 0.25,
             pointRadius: 0,
             borderWidth: 2,
-            spanGaps: true
           }]
         },
         options: {
@@ -308,249 +266,98 @@
             tooltip: { enabled: true }
           },
           scales: {
-            x: { ticks: { color: "#b9c7da", maxTicksLimit: 8 }, grid: { color: "rgba(255,255,255,0.06)" } },
+            x: { ticks: { color: "#b9c7da", maxTicksLimit: 10 }, grid: { color: "rgba(255,255,255,0.06)" } },
             y: { ticks: { color: "#b9c7da" }, grid: { color: "rgba(255,255,255,0.06)" } }
           }
         }
       });
+
+      charts[canvasId] = c;
     }
 
     function makeBarChart(canvasId, labels, data) {
       const ctx = document.getElementById(canvasId);
-      if (charts[canvasId]) charts[canvasId].destroy();
+      const old = charts[canvasId];
+      if (old) old.destroy();
 
-      charts[canvasId] = new Chart(ctx, {
+      const c = new Chart(ctx, {
         type: "bar",
-        data: { labels, datasets: [{ data, borderWidth: 1 }] },
+        data: {
+          labels,
+          datasets: [{
+            label: "Driver points",
+            data,
+            borderWidth: 1
+          }]
+        },
         options: {
           responsive: true,
-          plugins: { legend: { display: false } },
+          plugins: { legend: { display: false }, tooltip: { enabled: true } },
           scales: {
             x: { ticks: { color: "#b9c7da" }, grid: { color: "rgba(255,255,255,0.06)" } },
             y: { ticks: { color: "#b9c7da" }, grid: { color: "rgba(255,255,255,0.06)" }, suggestedMax: 50 }
           }
         }
       });
+
+      charts[canvasId] = c;
     }
 
-    function latestValidNumeric(series) {
-      for (let i = series.length - 1; i >= 0; i--) {
-        const v = safeNum(series[i]?.v);
-        if (v != null) return v;
-      }
-      return null;
-    }
-
-    async function loadLocksHistory() {
-      try {
-        const text = await getText("data/history/barge_locks27_weekly.csv");
-        const rows = parseCsv(text);
-
-        const pts = rows
-          .map(r => ({ d: r.week_end_date, v: safeNum(r.total_tons) }))
-          .filter(x => x.d && x.v != null)
-          .sort((a,b) => (a.d < b.d ? -1 : 1));
-
-        const slice = pts.slice(-60);
-        makeLineChart("locksChart", slice.map(x => x.d), slice.map(x => x.v), "Locks 27 total tons per week");
-        return { series: slice, latest: latestValidNumeric(slice) };
-      } catch (e) {
-        makeLineChart("locksChart", [], [], "Locks 27 total tons per week");
-        return { series: [], latest: null };
-      }
-    }
-
-    async function loadRailHistoryForChart() {
-      try {
-        const carrier = document.getElementById("railCarrier").value;
-        const metric = document.getElementById("railMetric").value;
-
-        const text = await getText("data/history/rail_weekly.csv");
-        const rows = parseCsv(text);
-
-        const pts = rows
-          .filter(r => (r.carrier || "").toUpperCase() === carrier)
-          .map(r => ({ d: r.week_end_date, v: safeNum(r[metric]) }))
-          .filter(x => x.d && x.v != null)
-          .sort((a,b) => (a.d < b.d ? -1 : 1))
-          .slice(-80);
-
-        const label = carrier + " " + (metric === "train_speed_mph" ? "train speed mph" : "terminal dwell hours");
-        makeLineChart("railChart", pts.map(x => x.d), pts.map(x => x.v), label);
-      } catch (e) {
-        makeLineChart("railChart", [], [], "Rail metric");
-      }
-    }
-
-    function renderRiverChart(river, siteKey, metricKey) {
-      const metric = river?.sites?.[siteKey]?.[metricKey];
-      const series = metric?.series_7d;
-
-      const title = metricKey === "discharge_cfs" ? "River discharge cfs last 7 days" : "River stage feet last 7 days";
-      const sub = metricKey === "discharge_cfs"
-        ? "USGS discharge time series cubic feet per second last 7 days"
-        : "USGS gauge height time series feet last 7 days";
-      document.getElementById("riverSub").textContent = sub;
-
-      if (series?.t_utc?.length && series?.v?.length) {
-        const pairs = [];
-        for (let i = 0; i < series.t_utc.length; i++) {
-          const t = series.t_utc[i];
-          const v = safeNum(series.v[i]);
-          if (!t || v == null) continue;
-          pairs.push({ t, v });
-        }
-        pairs.sort((a,b) => (a.t < b.t ? -1 : 1));
-
-        const labels = pairs.map(p => p.t.slice(0, 16).replace("T", " "));
-        const data = pairs.map(p => p.v);
-
-        makeLineChart("riverChart", labels, data, title);
-        return true;
-      }
-
-      const fallbackLabels = [];
-      const fallbackData = [];
-      if (metric?.earliest_value != null && metric?.earliest_utc) {
-        fallbackLabels.push(metric.earliest_utc.slice(0, 16).replace("T", " "));
-        fallbackData.push(metric.earliest_value);
-      }
-      if (metric?.latest_value != null && metric?.latest_utc) {
-        fallbackLabels.push(metric.latest_utc.slice(0, 16).replace("T", " "));
-        fallbackData.push(metric.latest_value);
-      }
-
-      makeLineChart("riverChart", fallbackLabels, fallbackData, title + " full series missing");
-      return false;
-    }
-
-    function setSignalsTable(risk, river, barge, rail, locksLatestFromCsv, riverSeriesOk) {
+    function setSignalsTable(risk, river, barge, rail) {
       const tbl = document.getElementById("signalsTable");
       const rows = [];
 
-      const stlGh = river?.sites?.st_louis_mo?.gage_height_ft;
-      const memGh = river?.sites?.memphis_tn?.gage_height_ft;
+      const siteKey = document.getElementById("riverSite").value;
+      const metricKey = document.getElementById("riverMetric").value;
 
-      rows.push([
-        "Mississippi River stage St Louis feet",
-        stlGh?.latest_value == null ? "–" : fmt2.format(stlGh.latest_value),
-        "gauge datum"
-      ]);
-
-      rows.push([
-        "Mississippi River stage change 7 days St Louis feet",
-        stlGh?.delta_7d == null ? "–" : fmt2.format(stlGh.delta_7d),
-        risk?.primary_driver === "river" ? "primary driver" : ""
-      ]);
-
-      rows.push([
-        "Mississippi River stage Memphis feet",
-        memGh?.latest_value == null ? "–" : fmt2.format(memGh.latest_value),
-        "gauge datum"
-      ]);
-
-      rows.push([
-        "Mississippi River stage change 7 days Memphis feet",
-        memGh?.delta_7d == null ? "–" : fmt2.format(memGh.delta_7d),
-        ""
-      ]);
+      const metricObj = river?.sites?.[siteKey]?.[metricKey];
+      rows.push(["River metric", metricKey === "gage_height_ft" ? "stage feet" : "discharge cfs", ""]);
+      rows.push(["River latest", metricObj?.latest_value ?? "–", risk?.primary_driver === "river" ? "driver" : ""]);
+      rows.push(["River delta 7d", metricObj?.delta_7d ?? "–", ""]);
 
       const l27 = barge?.locks_27;
-      rows.push([
-        "Locks 27 barge volume latest from history tons",
-        locksLatestFromCsv == null ? "–" : fmt0.format(locksLatestFromCsv),
-        locksLatestFromCsv == null ? "missing" : ""
-      ]);
-
-      rows.push([
-        "Locks 27 barge volume change 4 weeks",
-        l27?.delta_4w == null ? "–" : fmt0.format(l27.delta_4w),
-        risk?.primary_driver === "barge" ? "primary driver" : ""
-      ]);
+      rows.push(["Locks 27 latest", l27?.value ?? "–", risk?.primary_driver === "barge" ? "driver" : ""]);
+      rows.push(["Locks 27 delta 4w", l27?.delta_4w ?? "–", ""]);
 
       const upD = rail?.carriers?.UP?.metrics?.terminal_dwell_hours?.delta_4w;
-      rows.push([
-        "Union Pacific terminal dwell change 4 weeks hours",
-        upD == null ? "–" : fmt2.format(upD),
-        risk?.primary_driver === "rail" ? "primary driver" : ""
-      ]);
-
-      rows.push([
-        "River chart using full USGS series",
-        riverSeriesOk ? "yes" : "no",
-        riverSeriesOk ? "" : "series_7d missing in river_status.json"
-      ]);
+      rows.push(["UP dwell delta 4w hours", upD ?? "–", risk?.primary_driver === "rail" ? "driver" : ""]);
 
       const drivers = risk?.drivers || [];
-      for (const d of drivers) rows.push(["Driver points " + d.name, fmt0.format(d.score || 0), ""]);
+      for (const d of drivers) rows.push(["Driver points " + d.name, d.score, ""]);
 
       let html = "<thead><tr><th>Signal</th><th>Value</th><th>Note</th></tr></thead><tbody>";
       for (const r of rows) {
-        const note = r[2] ? "<span class='warnTxt'>" + r[2] + "</span>" : "";
+        const note = r[2] ? "<span class='warn'>" + r[2] + "</span>" : "";
         html += "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td><td>" + note + "</td></tr>";
       }
       html += "</tbody>";
       tbl.innerHTML = html;
     }
 
+    function pickRiverSeries(river, siteKey, metricKey) {
+      const site = river?.sites?.[siteKey];
+      if (!site) return { series: [], note: "Missing site data" };
+
+      const wanted = site?.[metricKey];
+      if (wanted?.series_7d?.length) return { series: wanted.series_7d, note: "" };
+
+      // fallback
+      const fallbackKey = metricKey === "gage_height_ft" ? "discharge_cfs" : "gage_height_ft";
+      const fb = site?.[fallbackKey];
+      if (fb?.series_7d?.length) {
+        return { series: fb.series_7d, note: "Selected metric is missing. Showing " + (fallbackKey === "gage_height_ft" ? "stage feet" : "discharge cfs") + " instead." };
+      }
+
+      const n = wanted?.note || fb?.note || "No 7 day series available from this pull";
+      return { series: [], note: n };
+    }
+
     async function loadAll() {
       const risk = await getJson("data/composite_risk_score.json");
       const river = await getJson("data/river_status.json");
       const barge = await getJson("data/barge_status.json");
+      const rail = await getJson("data/rail_status.json");
 
-      let rail = null;
-      try { rail = await getJson("data/rail_status.json"); } catch (e) { rail = null; }
-
-      document.getElementById("riskScore").textContent = fmt0.format(risk.risk_score ?? 0);
+      document.getElementById("riskScore").textContent = fmt.format(risk.risk_score ?? 0);
       pillFor(risk.risk_level);
-      document.getElementById("primaryDriver").textContent = "Primary driver " + (risk.primary_driver ?? "–");
-      document.getElementById("updated").textContent = "Updated " + (risk.generated_at_utc ?? "");
-
-      const stlGh = river?.sites?.st_louis_mo?.gage_height_ft;
-      document.getElementById("stlStage").textContent = stlGh?.latest_value == null ? "–" : fmt2.format(stlGh.latest_value);
-      document.getElementById("stlDelta").textContent = "7 day change " + (stlGh?.delta_7d == null ? "–" : fmt2.format(stlGh.delta_7d)) + " feet";
-
-      const locks = await loadLocksHistory();
-      const locksObj = barge?.locks_27;
-
-      document.getElementById("locksVal").textContent = locks.latest == null ? "–" : fmt0.format(locks.latest);
-      document.getElementById("locksDelta").textContent = "4 week change " + (locksObj?.delta_4w == null ? "–" : fmt0.format(locksObj.delta_4w));
-
-      const upDD = rail?.carriers?.UP?.metrics?.terminal_dwell_hours?.delta_4w;
-      document.getElementById("upDwellDelta").textContent = upDD == null ? "–" : fmt2.format(upDD);
-
-      const dlabels = (risk.drivers || []).map(d => d.name);
-      const dvals = (risk.drivers || []).map(d => safeNum(d.score) ?? 0);
-      makeBarChart("driverChart", dlabels, dvals);
-
-      const siteKey = document.getElementById("riverSite").value;
-      const metricKey = document.getElementById("riverMetric").value;
-      const riverSeriesOk = renderRiverChart(river, siteKey, metricKey);
-
-      setSignalsTable(risk, river, barge, rail, locks.latest, riverSeriesOk);
-
-      const riskHours = hoursAgo(risk.generated_at_utc);
-      const riverHours = hoursAgo(river.generated_at_utc);
-      const bargeHours = hoursAgo(barge.generated_at_utc);
-      const railHours = rail?.generated_at_utc ? hoursAgo(rail.generated_at_utc) : null;
-
-      setBadges([
-        { label: "Composite risk score", hours: riskHours },
-        { label: "USGS river gauge data", hours: riverHours },
-        { label: "USDA Locks 27 barge data", hours: bargeHours },
-        { label: "STB rail service metrics", hours: railHours }
-      ]);
-
-      await loadRailHistoryForChart();
-    }
-
-    document.getElementById("riverSite").addEventListener("change", () => loadAll());
-    document.getElementById("riverMetric").addEventListener("change", () => loadAll());
-    document.getElementById("railCarrier").addEventListener("change", () => loadRailHistoryForChart());
-    document.getElementById("railMetric").addEventListener("change", () => loadRailHistoryForChart());
-    document.getElementById("refreshBtn").addEventListener("click", () => loadAll());
-
-    loadAll();
-  </script>
-</body>
-</html>
+      document.getElementById("primaryDriver").textContent
