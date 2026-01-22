@@ -1,11 +1,12 @@
 {
-  "generated_at_utc": "2026-01-22T05:31:26.126254Z",
-  "locks_27": {
-    "delta_4w": -173.0,
-    "value": 0.0,
-    "week_end_date": "2024-01-27"
-  },
+  "generated_at_utc": "2026-01-22T07:21:37.395596Z",
   "sources": {
     "locks27_xlsx": "https://www.ams.usda.gov/sites/default/files/media/GTRFigure10.xlsx"
+  },
+  "locks_27": {
+    "week_end_date": "2024-01-27",
+    "value": 0.0,
+    "delta_4w": -173.0,
+    "unit": "tons"
   }
 }

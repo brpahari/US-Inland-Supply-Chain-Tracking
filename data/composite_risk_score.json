@@ -1,31 +1,30 @@
 {
+  "generated_at_utc": "2026-01-22T07:21:38.018870Z",
+  "risk_score": 40.0,
+  "risk_level": "LOW",
+  "primary_driver": "river",
   "drivers": [
     {
       "name": "river",
+      "score": 40.0,
       "raw": {
-        "delta_7d_ft": -5.96,
-        "latest_stage_ft": -2.71
-      },
-      "score": 40.0
+        "delta_7d_ft": -5.77,
+        "latest_stage_ft": -2.47
+      }
     },
     {
       "name": "rail",
+      "score": 0.0,
       "raw": {
         "up_dwell_delta_4w_hours": -1.0999999999999996
-      },
-      "score": 0.0
+      }
     },
     {
       "name": "barge",
+      "score": 0.0,
       "raw": {
-        "locks27_delta_4w_barges": -173.0,
-        "rate_delta_4w_usd_per_ton": 0.0
-      },
-      "score": 15.0
+        "locks27_delta_4w_tons": -173.0
+      }
     }
-  ],
-  "generated_at_utc": "2026-01-22T05:31:47.900561Z",
-  "primary_driver": "river",
-  "risk_level": "MODERATE",
-  "risk_score": 55.0
+  ]
 }
