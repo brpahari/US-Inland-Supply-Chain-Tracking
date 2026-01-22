@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 """
 generate_risk.py
-Inputs
+
+Reads
   data/river_status.json
   data/rail_status.json
   data/barge_status.json
-Output
+
+Writes
   data/composite_risk_score.json
+  data/history/risk_daily.csv
 """
 
 from __future__ import annotations
 
+import csv
 import json
 import os
 from datetime import datetime, timezone
@@ -18,6 +22,7 @@ from typing import Any, Dict, Optional
 
 
 OUT_RISK = "data/composite_risk_score.json"
+OUT_RISK_HIST = "data/history/risk_daily.csv"
 
 
 def utc_now_iso() -> str:
@@ -31,21 +36,18 @@ def load_json(path: str) -> Optional[Dict[str, Any]]:
         return json.load(f)
 
 
-def write_if_changed(path: str, obj: Dict) -> bool:
-    new_txt = json.dumps(obj, indent=2, sort_keys=True)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            old_txt = f.read()
-        if old_txt == new_txt:
-            return False
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_txt)
-    return True
-
-
-def clip(x: float, lo: float, hi: float) -> float:
+def clamp(x: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, x))
+
+
+def append_risk_history(ts_utc: str, risk_score: float, risk_level: str, primary_driver: str) -> None:
+    os.makedirs(os.path.dirname(OUT_RISK_HIST), exist_ok=True)
+    exists = os.path.exists(OUT_RISK_HIST)
+    with open(OUT_RISK_HIST, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if not exists:
+            w.writerow(["generated_at_utc", "risk_score", "risk_level", "primary_driver"])
+        w.writerow([ts_utc, f"{risk_score:.2f}", risk_level, primary_driver])
 
 
 def main() -> int:
@@ -54,82 +56,98 @@ def main() -> int:
     barge = load_json("data/barge_status.json") or {}
 
     drivers = []
+    total = 0.0
 
-    # River component
+    # River driver 0 to 40
     river_score = 0.0
-    delta_7d = 0.0
-    latest_stage = None
-    stl = river.get("sites", {}).get("st_louis_mo", {})
-    gh = stl.get("gage_height_ft", {}) if isinstance(stl, dict) else {}
-    if isinstance(gh, dict):
-        delta_7d = float(gh.get("delta_7d", 0.0) or 0.0)
-        latest_stage = gh.get("latest_value", None)
+    stl = (river.get("sites", {}).get("st_louis_mo", {}) or {}).get("gage_height_ft", {}) or {}
+    delta_7d = stl.get("delta_7d")
+    latest_stage = stl.get("latest_value")
 
-    # Thresholds are placeholders, tune using history later
-    if delta_7d < -2.0:
-        river_score += 20.0
-    if latest_stage is not None and float(latest_stage) < 0.0:
-        river_score += 20.0
+    if isinstance(delta_7d, (int, float)):
+        if delta_7d < -2.0:
+            river_score += 20
+        if delta_7d < -4.0:
+            river_score += 10
+    if isinstance(latest_stage, (int, float)):
+        if latest_stage < 0.0:
+            river_score += 10
 
-    drivers.append({"name": "river", "score": river_score, "raw": {"delta_7d_ft": delta_7d, "latest_stage_ft": latest_stage}})
+    river_score = clamp(river_score, 0.0, 40.0)
+    total += river_score
+    drivers.append({
+        "name": "river",
+        "score": river_score,
+        "raw": {
+            "delta_7d_ft": delta_7d,
+            "latest_stage_ft": latest_stage
+        }
+    })
 
-    # Rail component
+    # Rail driver 0 to 30
     rail_score = 0.0
-    up_dwell_delta = 0.0
-    up = rail.get("carriers", {}).get("UP", {})
-    if isinstance(up, dict):
-        dw = up.get("metrics", {}).get("terminal_dwell_hours", {})
-        if isinstance(dw, dict):
-            up_dwell_delta = float(dw.get("delta_4w", 0.0) or 0.0)
+    up = (((rail.get("carriers", {}) or {}).get("UP", {}) or {}).get("metrics", {}) or {}).get("terminal_dwell_hours", {}) or {}
+    up_dwell_delta = up.get("delta_4w")
+    if isinstance(up_dwell_delta, (int, float)):
+        if up_dwell_delta > 2.0:
+            rail_score += 30
+        elif up_dwell_delta > 0.5:
+            rail_score += 15
+    rail_score = clamp(rail_score, 0.0, 30.0)
+    total += rail_score
+    drivers.append({
+        "name": "rail",
+        "score": rail_score,
+        "raw": {
+            "up_dwell_delta_4w_hours": up_dwell_delta
+        }
+    })
 
-    if up_dwell_delta > 2.0:
-        rail_score += 30.0
-    elif up_dwell_delta > 0.5:
-        rail_score += 15.0
-
-    drivers.append({"name": "rail", "score": rail_score, "raw": {"up_dwell_delta_4w_hours": up_dwell_delta}})
-
-    # Barge component
+    # Barge driver 0 to 30
     barge_score = 0.0
-    locks_delta = 0.0
-    rates_delta = 0.0
-    locks = barge.get("locks_27", {})
-    if isinstance(locks, dict):
-        locks_delta = float(locks.get("delta_4w", 0.0) or 0.0)
+    l27 = (barge.get("locks_27", {}) or {})
+    l27_delta = l27.get("delta_4w")
+    if isinstance(l27_delta, (int, float)):
+        if l27_delta < -50000:
+            barge_score += 30
+        elif l27_delta < -15000:
+            barge_score += 15
+    barge_score = clamp(barge_score, 0.0, 30.0)
+    total += barge_score
+    drivers.append({
+        "name": "barge",
+        "score": barge_score,
+        "raw": {
+            "locks27_delta_4w_tons": l27_delta
+        }
+    })
 
-    rates = barge.get("rates", {})
-    if isinstance(rates, dict):
-        rates_delta = float(rates.get("delta_4w", 0.0) or 0.0)
-
-    # Use a simple divergence heuristic
-    # Falling movements plus rising rates is bad
-    if locks_delta < -50.0 and rates_delta > 5.0:
-        barge_score += 30.0
-    elif locks_delta < -25.0:
-        barge_score += 15.0
-
-    drivers.append({"name": "barge", "score": barge_score, "raw": {"locks27_delta_4w_barges": locks_delta, "rate_delta_4w_usd_per_ton": rates_delta}})
-
-    score = clip(river_score + rail_score + barge_score, 0.0, 100.0)
-
+    risk_score = clamp(total, 0.0, 100.0)
     level = "LOW"
-    if score > 70:
-        level = "CRITICAL"
-    elif score > 40:
+    if risk_score > 40:
         level = "MODERATE"
+    if risk_score > 70:
+        level = "CRITICAL"
 
-    primary = max(drivers, key=lambda d: d["score"])["name"] if drivers else "none"
+    primary = "none"
+    if drivers:
+        primary = sorted(drivers, key=lambda d: d["score"], reverse=True)[0]["name"]
 
     out = {
         "generated_at_utc": utc_now_iso(),
-        "risk_score": score,
+        "risk_score": risk_score,
         "risk_level": level,
         "primary_driver": primary,
-        "drivers": drivers,
+        "drivers": drivers
     }
 
-    write_if_changed(OUT_RISK, out)
-    print(f"Risk {score} {level} driver {primary}")
+    os.makedirs("data", exist_ok=True)
+    with open(OUT_RISK, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2)
+
+    append_risk_history(out["generated_at_utc"], risk_score, level, primary)
+
+    print(f"Risk Score {risk_score:.2f} {level} driver {primary}")
     return 0
 
 
