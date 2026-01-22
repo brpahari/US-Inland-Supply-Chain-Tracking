@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-barge_monitor.py
+rail_monitor.py
 
-Locks 27 volume from USDA GTR figure 10.
+STB rail service metrics ingestion.
 Writes
-  data/history/barge_locks27_weekly.csv
-  data/barge_status.json
+  data/history/rail_weekly.csv
+  data/rail_status.json
+
+Expected output fields
+  week_end_date, carrier, train_speed_mph, terminal_dwell_hours
 """
 
 from __future__ import annotations
@@ -15,172 +18,231 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, List
 
 import pandas as pd
 import requests
 
 
-LOCKS27_XLSX_URL = "https://www.ams.usda.gov/sites/default/files/media/GTRFigure10.xlsx"
-OUT_HIST = "data/history/barge_locks27_weekly.csv"
-OUT_STATUS = "data/barge_status.json"
+STB_XLSX_URL = "https://www.stb.gov/wp-content/uploads/EP-724-Data.xlsx"
+OUT_HIST = "data/history/rail_weekly.csv"
+OUT_STATUS = "data/rail_status.json"
+
+CARRIERS = ["UP", "BNSF"]
+TIMEOUT = 60
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def norm_header(x: object) -> str:
-    s = "" if x is None else str(x)
-    s = s.strip().lower()
-    s = re.sub(r"\s+", " ", s)
-    s = re.sub(r"[^a-z0-9 ]+", "", s)
-    return s
+def norm(s: object) -> str:
+    x = "" if s is None else str(s)
+    x = x.strip().lower()
+    x = re.sub(r"\s+", " ", x)
+    return x
 
 
-def choose_header_row(raw: pd.DataFrame) -> int:
-    for i in range(min(50, len(raw))):
-        row = raw.iloc[i].tolist()
-        strings = [norm_header(v) for v in row if isinstance(v, str)]
-        if len(strings) < 2:
+def fetch_xlsx() -> bytes:
+    r = requests.get(STB_XLSX_URL, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.content
+
+
+def read_any_sheet_wide(content: bytes) -> pd.DataFrame:
+    xls = pd.ExcelFile(io.BytesIO(content), engine="openpyxl")
+    best_df = None
+    best_cols = 0
+
+    for name in xls.sheet_names[:12]:
+        try:
+            raw = pd.read_excel(xls, sheet_name=name)
+        except Exception:
             continue
-        blob = " ".join(strings)
-        if "date" in blob or "week" in blob or "ending" in blob:
-            return i
-    return 0
+        if raw is None or raw.empty:
+            continue
+        cols = raw.columns.tolist()
+        if len(cols) > best_cols:
+            best_cols = len(cols)
+            best_df = raw
+
+    if best_df is None:
+        raise RuntimeError("Could not read STB workbook")
+    return best_df
 
 
-def detect_date_column(df: pd.DataFrame) -> str:
-    best = None
-    best_hits = -1
-    sample_n = min(120, len(df))
+def detect_week_columns(df: pd.DataFrame) -> List[str]:
+    cols = []
     for c in df.columns:
-        s = pd.to_datetime(df[c].head(sample_n), errors="coerce")
-        hits = int(s.notna().sum())
-        if hits > best_hits:
-            best_hits = hits
-            best = c
-    if best is None or best_hits < 5:
-        raise RuntimeError("Locks 27 file missing a usable date column")
-    return str(best)
-
-
-def detect_total_column(df: pd.DataFrame, date_col: str) -> str:
-    headers = {c: norm_header(c) for c in df.columns}
-
-    for c, h in headers.items():
-        if str(c) == date_col:
+        if isinstance(c, (datetime, pd.Timestamp)):
+            cols.append(c)
             continue
-        if "total" in h:
-            return str(c)
+        s = str(c)
+        if re.search(r"\d{4}[-/]\d{2}[-/]\d{2}", s):
+            cols.append(c)
+    return cols
 
-    best = None
-    best_hits = -1
+
+def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
+    # Identify dimension columns
+    col_carrier = None
     for c in df.columns:
-        if str(c) == date_col:
-            continue
-        vals = pd.to_numeric(df[c], errors="coerce")
-        hits = int(vals.notna().sum())
-        if hits > best_hits:
-            best_hits = hits
-            best = c
+        if "railroad" in norm(c) or "region" in norm(c):
+            col_carrier = c
+            break
+    if col_carrier is None:
+        col_carrier = df.columns[0]
 
-    if best is None or best_hits < 5:
-        raise RuntimeError("Locks 27 file missing a usable numeric total column")
-    return str(best)
+    # Measure columns
+    col_measure = None
+    for c in df.columns:
+        if "measure" in norm(c):
+            col_measure = c
+            break
 
+    # Week columns
+    week_cols = detect_week_columns(df)
+    if not week_cols:
+        raise RuntimeError("No week date columns found in STB data")
 
-def fetch_locks27() -> pd.DataFrame:
-    b = requests.get(LOCKS27_XLSX_URL, timeout=60).content
-    raw = pd.read_excel(io.BytesIO(b), engine="openpyxl", header=None)
-    raw = raw.dropna(axis=0, how="all").dropna(axis=1, how="all")
+    id_vars = [col_carrier]
+    if col_measure is not None:
+        id_vars.append(col_measure)
 
-    hdr = choose_header_row(raw)
-    df = pd.read_excel(io.BytesIO(b), engine="openpyxl", header=hdr)
-    df = df.dropna(axis=0, how="all").dropna(axis=1, how="all")
-    df.columns = [str(c).strip() for c in df.columns]
+    m = df.melt(id_vars=id_vars, value_vars=week_cols, var_name="week_end_date", value_name="value")
 
-    date_col = detect_date_column(df)
-    total_col = detect_total_column(df, date_col)
+    # Normalize week_end_date
+    m["week_end_date"] = pd.to_datetime(m["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
 
-    out = df[[date_col, total_col]].copy()
-    out.columns = ["week_end_date", "total_tons"]
+    m[col_carrier] = m[col_carrier].astype(str).str.upper().str.strip()
+    if col_measure is not None:
+        m[col_measure] = m[col_measure].astype(str).str.lower().str.strip()
 
-    out["week_end_date"] = pd.to_datetime(out["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    out["total_tons"] = pd.to_numeric(out["total_tons"], errors="coerce")
-    out = out.dropna(subset=["week_end_date", "total_tons"])
+    m["value"] = pd.to_numeric(m["value"], errors="coerce")
+    m = m.dropna(subset=["week_end_date", "value"])
 
-    out["source_url"] = LOCKS27_XLSX_URL
-    out["ingested_at_utc"] = utc_now_iso()
-    return out
+    # Carrier mapping
+    def carrier_map(x: str) -> Optional[str]:
+      if "BNSF" in x:
+          return "BNSF"
+      if "UNION PACIFIC" in x or x == "UP":
+          return "UP"
+      if x in CARRIERS:
+          return x
+      return None
+
+    m["carrier"] = m[col_carrier].apply(carrier_map)
+    m = m.dropna(subset=["carrier"])
+
+    # Metric mapping
+    # Use measure column if present, else fallback to nothing
+    def metric_map(measure: str) -> Optional[str]:
+        s = measure
+        if "train speed" in s and "mph" in s:
+            return "train_speed_mph"
+        if "avg train speed" in s:
+            return "train_speed_mph"
+        if "terminal dwell" in s or (("dwell" in s) and ("terminal" in s)):
+            return "terminal_dwell_hours"
+        if "dwell time" in s:
+            return "terminal_dwell_hours"
+        return None
+
+    if col_measure is None:
+        raise RuntimeError("STB sheet missing measure column, cannot map metrics")
+
+    m["metric"] = m[col_measure].apply(metric_map)
+    m = m.dropna(subset=["metric"])
+
+    pivot = m.pivot_table(
+        index=["week_end_date", "carrier"],
+        columns="metric",
+        values="value",
+        aggfunc="mean",
+    ).reset_index()
+
+    if "train_speed_mph" not in pivot.columns:
+        pivot["train_speed_mph"] = pd.NA
+    if "terminal_dwell_hours" not in pivot.columns:
+        pivot["terminal_dwell_hours"] = pd.NA
+
+    pivot["source_url"] = STB_XLSX_URL
+    pivot["ingested_at_utc"] = utc_now_iso()
+    return pivot
 
 
 def load_hist() -> pd.DataFrame:
     if not os.path.exists(OUT_HIST):
-        return pd.DataFrame(columns=["week_end_date", "total_tons", "source_url", "ingested_at_utc"])
+        return pd.DataFrame(columns=["week_end_date", "carrier", "train_speed_mph", "terminal_dwell_hours", "source_url", "ingested_at_utc"])
     return pd.read_csv(OUT_HIST)
 
 
-def update_history(new_df: pd.DataFrame) -> pd.DataFrame:
+def update_hist(new_df: pd.DataFrame) -> pd.DataFrame:
     os.makedirs(os.path.dirname(OUT_HIST), exist_ok=True)
     hist = load_hist()
     combined = pd.concat([hist, new_df], ignore_index=True)
-    combined = combined.drop_duplicates(subset=["week_end_date"], keep="last")
-    combined = combined.sort_values(["week_end_date"])
+    combined = combined.drop_duplicates(subset=["week_end_date", "carrier"], keep="last")
+    combined = combined.sort_values(["week_end_date", "carrier"])
     combined.to_csv(OUT_HIST, index=False)
     return combined
 
 
-def latest_valid_total(df: pd.DataFrame) -> Optional[float]:
-    if df.empty:
+def metric_delta_4w(df: pd.DataFrame, carrier: str, metric: str) -> Optional[float]:
+    d = df[df["carrier"].str.upper() == carrier].copy()
+    if d.empty:
         return None
-    s = pd.to_numeric(df["total_tons"], errors="coerce")
-    ok = df[s.notna()].copy()
-    if ok.empty:
+    d[metric] = pd.to_numeric(d[metric], errors="coerce")
+    d = d.dropna(subset=[metric]).sort_values("week_end_date")
+    if len(d) < 5:
         return None
-    ok = ok.sort_values("week_end_date")
-    return float(ok.iloc[-1]["total_tons"])
+    return float(d.iloc[-1][metric] - d.iloc[-5][metric])
 
 
-def delta_4w(df: pd.DataFrame) -> Optional[float]:
-    if df.empty:
+def latest_value(df: pd.DataFrame, carrier: str, metric: str) -> Optional[float]:
+    d = df[df["carrier"].str.upper() == carrier].copy()
+    if d.empty:
         return None
-    df2 = df.copy()
-    df2["total_tons"] = pd.to_numeric(df2["total_tons"], errors="coerce")
-    df2 = df2.dropna(subset=["total_tons"]).sort_values("week_end_date")
-    if len(df2) < 5:
+    d[metric] = pd.to_numeric(d[metric], errors="coerce")
+    d = d.dropna(subset=[metric]).sort_values("week_end_date")
+    if d.empty:
         return None
-    return float(df2.iloc[-1]["total_tons"] - df2.iloc[-5]["total_tons"])
+    return float(d.iloc[-1][metric])
 
 
 def main() -> int:
-    locks = fetch_locks27()
-    hist = update_history(locks)
+    content = fetch_xlsx()
+    wide = read_any_sheet_wide(content)
+    clean = melt_wide(wide)
+    hist = update_hist(clean)
 
-    latest = latest_valid_total(hist)
-    d4 = delta_4w(hist)
-
-    status: Dict[str, object] = {
+    out = {
         "generated_at_utc": utc_now_iso(),
-        "sources": {"locks27_xlsx": LOCKS27_XLSX_URL},
-        "locks_27": {
-            "week_end_date": None,
-            "value": latest,
-            "delta_4w": d4,
-            "unit": "tons",
-        },
+        "source_url": STB_XLSX_URL,
+        "carriers": {}
     }
 
-    if not hist.empty:
-        hist2 = hist.copy()
-        hist2["total_tons"] = pd.to_numeric(hist2["total_tons"], errors="coerce")
-        hist2 = hist2.dropna(subset=["total_tons"]).sort_values("week_end_date")
-        if not hist2.empty:
-            status["locks_27"]["week_end_date"] = str(hist2.iloc[-1]["week_end_date"])
+    for c in CARRIERS:
+        out["carriers"][c] = {
+            "metrics": {
+                "train_speed_mph": {
+                    "value": latest_value(hist, c, "train_speed_mph"),
+                    "delta_4w": metric_delta_4w(hist, c, "train_speed_mph"),
+                },
+                "terminal_dwell_hours": {
+                    "value": latest_value(hist, c, "terminal_dwell_hours"),
+                    "delta_4w": metric_delta_4w(hist, c, "terminal_dwell_hours"),
+                },
+            }
+        }
+
+        # latest week for carrier
+        d = hist[hist["carrier"].str.upper() == c].copy()
+        d = d.sort_values("week_end_date")
+        out["carriers"][c]["week_end_date"] = None if d.empty else str(d.iloc[-1]["week_end_date"])
 
     os.makedirs("data", exist_ok=True)
     with open(OUT_STATUS, "w", encoding="utf-8") as f:
-        json.dump(status, f, indent=2)
+        json.dump(out, f, indent=2)
 
     print(f"Updated {OUT_HIST} and {OUT_STATUS}")
     return 0
