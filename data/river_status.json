@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-22T08:48:32.816267Z",
+  "generated_at_utc": "2026-01-22T08:51:22.062856Z",
   "source": {
     "provider": "USGS NWIS Instantaneous Values",
     "endpoint": "https://waterservices.usgs.gov/nwis/iv/"
