@@ -89,3 +89,4 @@ timestamp_utc,risk_score,risk_level,primary_driver
 2026-01-19T12:00:52.289485Z,0,LOW,none
 2026-01-20T12:00:52.289485Z,0,LOW,none
 2026-01-21T12:00:52.289485Z,15,LOW,rail
+2026-01-22T09:00:56.337028Z,70,MODERATE,river
