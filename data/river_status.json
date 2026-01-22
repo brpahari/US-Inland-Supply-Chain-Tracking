@@ -1,0 +1,46 @@
+{
+  "generated_at_utc": "2026-01-22T05:31:24.830593Z",
+  "period": "P7D",
+  "source": {
+    "provider": "USGS Water Services NWIS IV",
+    "endpoint": "https://waterservices.usgs.gov/nwis/iv/"
+  },
+  "sites": {
+    "st_louis_mo": {
+      "site_no": "07010000",
+      "label": "Mississippi River at St. Louis, MO",
+      "gage_height_ft": {
+        "latest_utc": "2026-01-22T05:00:00Z",
+        "latest_value": -2.71,
+        "earliest_utc": "2026-01-15T06:00:00Z",
+        "earliest_value": 3.25,
+        "delta_7d": -5.96,
+        "slope_per_day": -0.8565269461077845,
+        "n_points": 326
+      },
+      "discharge_cfs": {
+        "latest_utc": "2026-01-22T05:00:00Z",
+        "latest_value": 76500.0,
+        "earliest_utc": "2026-01-15T06:00:00Z",
+        "earliest_value": 125000.0,
+        "delta_7d": -48500.0,
+        "slope_per_day": -6970.059880239522,
+        "n_points": 326
+      }
+    },
+    "memphis_tn": {
+      "site_no": "07032000",
+      "label": "Mississippi River at Memphis, TN",
+      "gage_height_ft": null,
+      "discharge_cfs": {
+        "latest_utc": "2026-01-22T05:00:00Z",
+        "latest_value": 298000.0,
+        "earliest_utc": "2026-01-15T06:00:00Z",
+        "earliest_value": 274000.0,
+        "delta_7d": 24000.0,
+        "slope_per_day": 3449.1017964071857,
+        "n_points": 168
+      }
+    }
+  }
+}
