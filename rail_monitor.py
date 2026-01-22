@@ -1,259 +1,250 @@
 #!/usr/bin/env python3
 """
 rail_monitor.py
-Ingest STB weekly rail service metrics for UP and BNSF
-Handles wide pivot format where week ending dates are columns
 
-Outputs
+STB rail service metrics ingestion.
+Writes
   data/history/rail_weekly.csv
   data/rail_status.json
+
+Expected output fields
+  week_end_date, carrier, train_speed_mph, terminal_dwell_hours
 """
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import os
+import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, Optional, Tuple, List
 
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
 
 
-STB_LANDING_URL = "https://www.stb.gov/reports-data/rail-service-data/"
-
-OUT_HISTORY = "data/history/rail_weekly.csv"
+STB_XLSX_URL = "https://www.stb.gov/wp-content/uploads/EP-724-Data.xlsx"
+OUT_HIST = "data/history/rail_weekly.csv"
 OUT_STATUS = "data/rail_status.json"
 
 CARRIERS = ["UP", "BNSF"]
-
-MEASURE_MATCH = {
-    "train_speed_mph": ["train speed", "speed"],
-    "terminal_dwell_hours": ["terminal dwell", "dwell"],
-}
-
-CARRIER_MATCH = {
-    "UP": ["union pacific", "up"],
-    "BNSF": ["bnsf"],
-}
+TIMEOUT = 60
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def sha256_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
+def norm(s: object) -> str:
+    x = "" if s is None else str(s)
+    x = x.strip().lower()
+    x = re.sub(r"\s+", " ", x)
+    return x
 
 
-def find_latest_stb_xlsx_url() -> str:
-    r = requests.get(STB_LANDING_URL, timeout=30)
+def fetch_xlsx() -> bytes:
+    r = requests.get(STB_XLSX_URL, timeout=TIMEOUT)
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "lxml")
-
-    links = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
-        if href.lower().endswith(".xlsx"):
-            if href.startswith("/"):
-                href = "https://www.stb.gov" + href
-            links.append(href)
-
-    if not links:
-        raise RuntimeError("Could not find any xlsx link on STB landing page")
-
-    preferred = [u for u in links if "ep" in u.lower() or "724" in u.lower() or "data" in u.lower()]
-    return preferred[0] if preferred else links[0]
+    return r.content
 
 
-def try_read_excel(xlsx_bytes: bytes) -> pd.DataFrame:
-    last_err = None
-    for hdr in [0, 1, 2, 3, 4, 5, 6]:
+def read_any_sheet_wide(content: bytes) -> pd.DataFrame:
+    xls = pd.ExcelFile(io.BytesIO(content), engine="openpyxl")
+    best_df = None
+    best_cols = 0
+
+    for name in xls.sheet_names[:12]:
         try:
-            df = pd.read_excel(io.BytesIO(xlsx_bytes), engine="openpyxl", header=hdr)
-            if df is not None and len(df.columns) > 6:
-                return df
-        except Exception as e:
-            last_err = e
-    raise RuntimeError(f"Failed to read excel with header hunting. Last error {last_err}")
-
-
-def normalize_cols(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df.columns = [str(c).strip() for c in df.columns]
-    return df
-
-
-def find_col(df: pd.DataFrame, wants: List[str]) -> Optional[str]:
-    cols = list(df.columns)
-    for c in cols:
-        lc = str(c).strip().lower()
-        for w in wants:
-            if w in lc:
-                return c
-    return None
-
-
-def find_date_columns(df: pd.DataFrame) -> List[str]:
-    date_cols = []
-    for c in df.columns:
-        if isinstance(c, (pd.Timestamp, datetime)):
-            date_cols.append(c)
-            continue
-        s = pd.to_datetime(df[c], errors="coerce")
-        # In the wide format, the date columns are headers, not values
-        # So we also accept columns whose name parses as a date
-        try:
-            name_dt = pd.to_datetime(str(c), errors="coerce")
-            if pd.notna(name_dt):
-                date_cols.append(c)
+            raw = pd.read_excel(xls, sheet_name=name)
         except Exception:
-            pass
-    # Dedup preserve order
-    seen = set()
-    out = []
-    for c in date_cols:
-        if c not in seen:
-            seen.add(c)
-            out.append(c)
-    return out
+            continue
+        if raw is None or raw.empty:
+            continue
+        cols = raw.columns.tolist()
+        if len(cols) > best_cols:
+            best_cols = len(cols)
+            best_df = raw
+
+    if best_df is None:
+        raise RuntimeError("Could not read STB workbook")
+    return best_df
 
 
-def carrier_from_row(rr_region: str) -> Optional[str]:
-    s = str(rr_region).strip().lower()
-    for canon, toks in CARRIER_MATCH.items():
-        for t in toks:
-            if t in s:
-                return canon
-    return None
+def detect_week_columns(df: pd.DataFrame) -> List[str]:
+    cols = []
+    for c in df.columns:
+        if isinstance(c, (datetime, pd.Timestamp)):
+            cols.append(c)
+            continue
+        s = str(c)
+        if re.search(r"\d{4}[-/]\d{2}[-/]\d{2}", s):
+            cols.append(c)
+    return cols
 
 
-def metric_from_row(measure: str, variable: str, subvar: str) -> Optional[str]:
-    blob = " ".join([str(measure), str(variable), str(subvar)]).strip().lower()
-    for metric, toks in MEASURE_MATCH.items():
-        for t in toks:
-            if t in blob:
-                return metric
-    return None
+def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
+    # Identify dimension columns
+    col_carrier = None
+    for c in df.columns:
+        if "railroad" in norm(c) or "region" in norm(c):
+            col_carrier = c
+            break
+    if col_carrier is None:
+        col_carrier = df.columns[0]
 
+    # Measure columns
+    col_measure = None
+    for c in df.columns:
+        if "measure" in norm(c):
+            col_measure = c
+            break
 
-def load_history() -> pd.DataFrame:
-    cols = ["week_end_date", "carrier", "train_speed_mph", "terminal_dwell_hours", "source_url", "ingested_at_utc"]
-    if not os.path.exists(OUT_HISTORY):
-        return pd.DataFrame(columns=cols)
-    return pd.read_csv(OUT_HISTORY)
+    # Week columns
+    week_cols = detect_week_columns(df)
+    if not week_cols:
+        raise RuntimeError("No week date columns found in STB data")
 
+    id_vars = [col_carrier]
+    if col_measure is not None:
+        id_vars.append(col_measure)
 
-def write_if_changed(path: str, obj: Dict) -> bool:
-    new_txt = json.dumps(obj, indent=2, sort_keys=True)
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            old_txt = f.read()
-        if old_txt == new_txt:
-            return False
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(new_txt)
-    return True
+    m = df.melt(id_vars=id_vars, value_vars=week_cols, var_name="week_end_date", value_name="value")
 
+    # Normalize week_end_date
+    m["week_end_date"] = pd.to_datetime(m["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
 
-def main() -> int:
-    xlsx_url = find_latest_stb_xlsx_url()
-    b = requests.get(xlsx_url, timeout=60).content
-    src_hash = sha256_bytes(b)
+    m[col_carrier] = m[col_carrier].astype(str).str.upper().str.strip()
+    if col_measure is not None:
+        m[col_measure] = m[col_measure].astype(str).str.lower().str.strip()
 
-    df = normalize_cols(try_read_excel(b))
+    m["value"] = pd.to_numeric(m["value"], errors="coerce")
+    m = m.dropna(subset=["week_end_date", "value"])
 
-    rr_col = find_col(df, ["railroad", "region"])
-    measure_col = find_col(df, ["measure"])
-    var_col = find_col(df, ["variable"])
-    subvar_col = find_col(df, ["sub-variable", "sub variable", "subvariable"])
+    # Carrier mapping
+    def carrier_map(x: str) -> Optional[str]:
+      if "BNSF" in x:
+          return "BNSF"
+      if "UNION PACIFIC" in x or x == "UP":
+          return "UP"
+      if x in CARRIERS:
+          return x
+      return None
 
-    if rr_col is None or measure_col is None or var_col is None or subvar_col is None:
-        raise RuntimeError("Could not locate descriptor columns in STB file")
+    m["carrier"] = m[col_carrier].apply(carrier_map)
+    m = m.dropna(subset=["carrier"])
 
-    date_cols = [c for c in df.columns if c not in [rr_col, measure_col, var_col, subvar_col] and "category" not in str(c).lower()]
+    # Metric mapping
+    # Use measure column if present, else fallback to nothing
+    def metric_map(measure: str) -> Optional[str]:
+        s = measure
+        if "train speed" in s and "mph" in s:
+            return "train_speed_mph"
+        if "avg train speed" in s:
+            return "train_speed_mph"
+        if "terminal dwell" in s or (("dwell" in s) and ("terminal" in s)):
+            return "terminal_dwell_hours"
+        if "dwell time" in s:
+            return "terminal_dwell_hours"
+        return None
 
-    # Keep only columns that look like dates
-    keep_dates = []
-    for c in date_cols:
-        dt = pd.to_datetime(str(c), errors="coerce")
-        if pd.notna(dt):
-            keep_dates.append(c)
+    if col_measure is None:
+        raise RuntimeError("STB sheet missing measure column, cannot map metrics")
 
-    if len(keep_dates) == 0:
-        raise RuntimeError("Could not locate week ending date columns in STB file")
+    m["metric"] = m[col_measure].apply(metric_map)
+    m = m.dropna(subset=["metric"])
 
-    df_small = df[[rr_col, measure_col, var_col, subvar_col] + keep_dates].copy()
-    df_small["carrier"] = df_small[rr_col].apply(carrier_from_row)
-    df_small["metric"] = df_small.apply(lambda r: metric_from_row(r[measure_col], r[var_col], r[subvar_col]), axis=1)
-
-    df_small = df_small.dropna(subset=["carrier", "metric"])
-
-    long = df_small.melt(
-        id_vars=["carrier", "metric"],
-        value_vars=keep_dates,
-        var_name="week_end_date",
-        value_name="value",
-    )
-
-    long["week_end_date"] = pd.to_datetime(long["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    long["value"] = pd.to_numeric(long["value"], errors="coerce")
-    long = long.dropna(subset=["week_end_date", "value"])
-
-    pivot = long.pivot_table(
+    pivot = m.pivot_table(
         index=["week_end_date", "carrier"],
         columns="metric",
         values="value",
-        aggfunc="last",
+        aggfunc="mean",
     ).reset_index()
 
-    for m in ["train_speed_mph", "terminal_dwell_hours"]:
-        if m not in pivot.columns:
-            pivot[m] = pd.NA
+    if "train_speed_mph" not in pivot.columns:
+        pivot["train_speed_mph"] = pd.NA
+    if "terminal_dwell_hours" not in pivot.columns:
+        pivot["terminal_dwell_hours"] = pd.NA
 
-    pivot["source_url"] = xlsx_url
+    pivot["source_url"] = STB_XLSX_URL
     pivot["ingested_at_utc"] = utc_now_iso()
+    return pivot
 
-    hist = load_history()
-    combined = pd.concat([hist, pivot[hist.columns]], ignore_index=True)
+
+def load_hist() -> pd.DataFrame:
+    if not os.path.exists(OUT_HIST):
+        return pd.DataFrame(columns=["week_end_date", "carrier", "train_speed_mph", "terminal_dwell_hours", "source_url", "ingested_at_utc"])
+    return pd.read_csv(OUT_HIST)
+
+
+def update_hist(new_df: pd.DataFrame) -> pd.DataFrame:
+    os.makedirs(os.path.dirname(OUT_HIST), exist_ok=True)
+    hist = load_hist()
+    combined = pd.concat([hist, new_df], ignore_index=True)
     combined = combined.drop_duplicates(subset=["week_end_date", "carrier"], keep="last")
     combined = combined.sort_values(["week_end_date", "carrier"])
+    combined.to_csv(OUT_HIST, index=False)
+    return combined
 
-    os.makedirs(os.path.dirname(OUT_HISTORY), exist_ok=True)
-    combined.to_csv(OUT_HISTORY, index=False)
 
-    status = {
+def metric_delta_4w(df: pd.DataFrame, carrier: str, metric: str) -> Optional[float]:
+    d = df[df["carrier"].str.upper() == carrier].copy()
+    if d.empty:
+        return None
+    d[metric] = pd.to_numeric(d[metric], errors="coerce")
+    d = d.dropna(subset=[metric]).sort_values("week_end_date")
+    if len(d) < 5:
+        return None
+    return float(d.iloc[-1][metric] - d.iloc[-5][metric])
+
+
+def latest_value(df: pd.DataFrame, carrier: str, metric: str) -> Optional[float]:
+    d = df[df["carrier"].str.upper() == carrier].copy()
+    if d.empty:
+        return None
+    d[metric] = pd.to_numeric(d[metric], errors="coerce")
+    d = d.dropna(subset=[metric]).sort_values("week_end_date")
+    if d.empty:
+        return None
+    return float(d.iloc[-1][metric])
+
+
+def main() -> int:
+    content = fetch_xlsx()
+    wide = read_any_sheet_wide(content)
+    clean = melt_wide(wide)
+    hist = update_hist(clean)
+
+    out = {
         "generated_at_utc": utc_now_iso(),
-        "source": {"landing": STB_LANDING_URL, "xlsx": xlsx_url, "sha256": src_hash},
-        "carriers": {},
+        "source_url": STB_XLSX_URL,
+        "carriers": {}
     }
 
-    for carrier in CARRIERS:
-        c = combined[combined["carrier"] == carrier].sort_values("week_end_date")
-        if c.empty:
-            continue
-        latest = c.iloc[-1]
-        tail = c.tail(5)
+    for c in CARRIERS:
+        out["carriers"][c] = {
+            "metrics": {
+                "train_speed_mph": {
+                    "value": latest_value(hist, c, "train_speed_mph"),
+                    "delta_4w": metric_delta_4w(hist, c, "train_speed_mph"),
+                },
+                "terminal_dwell_hours": {
+                    "value": latest_value(hist, c, "terminal_dwell_hours"),
+                    "delta_4w": metric_delta_4w(hist, c, "terminal_dwell_hours"),
+                },
+            }
+        }
 
-        metrics = {}
-        for metric in ["train_speed_mph", "terminal_dwell_hours"]:
-            val = latest[metric]
-            if pd.isna(val):
-                continue
-            val = float(val)
-            delta_4w = 0.0
-            if len(tail) >= 5 and not pd.isna(tail.iloc[0][metric]):
-                delta_4w = val - float(tail.iloc[0][metric])
-            metrics[metric] = {"value": val, "delta_4w": delta_4w}
+        # latest week for carrier
+        d = hist[hist["carrier"].str.upper() == c].copy()
+        d = d.sort_values("week_end_date")
+        out["carriers"][c]["week_end_date"] = None if d.empty else str(d.iloc[-1]["week_end_date"])
 
-        status["carriers"][carrier] = {"week_end_date": str(latest["week_end_date"]), "metrics": metrics}
+    os.makedirs("data", exist_ok=True)
+    with open(OUT_STATUS, "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2)
 
-    write_if_changed(OUT_STATUS, status)
-    print(f"Updated {OUT_HISTORY} and {OUT_STATUS}")
+    print(f"Updated {OUT_HIST} and {OUT_STATUS}")
     return 0
 
 
