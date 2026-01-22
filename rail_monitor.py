@@ -18,13 +18,13 @@ import json
 import os
 import re
 from datetime import datetime, timezone
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional, List, Tuple
 
 import pandas as pd
 import requests
 
 
-STB_XLSX_URL = "https://www.stb.gov/wp-content/uploads/EP-724-Data.xlsx"
+STB_RAIL_SERVICE_PAGE = "https://www.stb.gov/reports-data/rail-service-data/"
 OUT_HIST = "data/history/rail_weekly.csv"
 OUT_STATUS = "data/rail_status.json"
 
@@ -43,8 +43,66 @@ def norm(s: object) -> str:
     return x
 
 
-def fetch_xlsx() -> bytes:
-    r = requests.get(STB_XLSX_URL, timeout=TIMEOUT)
+def discover_latest_weekly_xlsx_url() -> str:
+    """
+    Scrape STB Rail Service Data page for links that look like weekly xlsx files.
+    Choose the newest by parsing MM-DD-YY or MM-DD-YYYY in the filename.
+    """
+    r = requests.get(STB_RAIL_SERVICE_PAGE, timeout=TIMEOUT)
+    r.raise_for_status()
+    html = r.text
+
+    # Pull all hrefs ending in .xlsx
+    hrefs = re.findall(r'href="([^"]+\.xlsx)"', html, flags=re.IGNORECASE)
+    if not hrefs:
+        raise RuntimeError("No .xlsx links found on STB rail service data page")
+
+    # Normalize to absolute URLs
+    urls: List[str] = []
+    for h in hrefs:
+        if h.startswith("http"):
+            urls.append(h)
+        elif h.startswith("/"):
+            urls.append("https://www.stb.gov" + h)
+        else:
+            urls.append("https://www.stb.gov/" + h)
+
+    def parse_date_from_url(u: str) -> Optional[datetime]:
+        base = u.split("/")[-1]
+        base = base.replace("%20", " ")
+        m = re.search(r"(\d{2})-(\d{2})-(\d{2,4})", base)
+        if not m:
+            return None
+        mm = int(m.group(1))
+        dd = int(m.group(2))
+        yy = int(m.group(3))
+        if yy < 100:
+            yy = 2000 + yy
+        try:
+            return datetime(yy, mm, dd)
+        except Exception:
+            return None
+
+    dated: List[Tuple[datetime, str]] = []
+    undated: List[str] = []
+
+    for u in urls:
+        d = parse_date_from_url(u)
+        if d is None:
+            undated.append(u)
+        else:
+            dated.append((d, u))
+
+    if dated:
+        dated.sort(key=lambda t: t[0])
+        return dated[-1][1]
+
+    # Fallback if nothing parses
+    return urls[-1]
+
+
+def fetch_xlsx(url: str) -> bytes:
+    r = requests.get(url, timeout=TIMEOUT)
     r.raise_for_status()
     return r.content
 
@@ -83,8 +141,7 @@ def detect_week_columns(df: pd.DataFrame) -> List[str]:
     return cols
 
 
-def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
-    # Identify dimension columns
+def melt_wide(df: pd.DataFrame, source_url: str) -> pd.DataFrame:
     col_carrier = None
     for c in df.columns:
         if "railroad" in norm(c) or "region" in norm(c):
@@ -93,14 +150,12 @@ def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
     if col_carrier is None:
         col_carrier = df.columns[0]
 
-    # Measure columns
     col_measure = None
     for c in df.columns:
         if "measure" in norm(c):
             col_measure = c
             break
 
-    # Week columns
     week_cols = detect_week_columns(df)
     if not week_cols:
         raise RuntimeError("No week date columns found in STB data")
@@ -111,45 +166,38 @@ def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
 
     m = df.melt(id_vars=id_vars, value_vars=week_cols, var_name="week_end_date", value_name="value")
 
-    # Normalize week_end_date
     m["week_end_date"] = pd.to_datetime(m["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
-
     m[col_carrier] = m[col_carrier].astype(str).str.upper().str.strip()
-    if col_measure is not None:
-        m[col_measure] = m[col_measure].astype(str).str.lower().str.strip()
+
+    if col_measure is None:
+        raise RuntimeError("STB sheet missing measure column, cannot map metrics")
+
+    m[col_measure] = m[col_measure].astype(str).str.lower().str.strip()
 
     m["value"] = pd.to_numeric(m["value"], errors="coerce")
     m = m.dropna(subset=["week_end_date", "value"])
 
-    # Carrier mapping
     def carrier_map(x: str) -> Optional[str]:
-      if "BNSF" in x:
-          return "BNSF"
-      if "UNION PACIFIC" in x or x == "UP":
-          return "UP"
-      if x in CARRIERS:
-          return x
-      return None
+        if "BNSF" in x:
+            return "BNSF"
+        if "UNION PACIFIC" in x or x == "UP":
+            return "UP"
+        if x in CARRIERS:
+            return x
+        return None
 
     m["carrier"] = m[col_carrier].apply(carrier_map)
     m = m.dropna(subset=["carrier"])
 
-    # Metric mapping
-    # Use measure column if present, else fallback to nothing
     def metric_map(measure: str) -> Optional[str]:
         s = measure
-        if "train speed" in s and "mph" in s:
+        if "train speed" in s:
             return "train_speed_mph"
-        if "avg train speed" in s:
-            return "train_speed_mph"
-        if "terminal dwell" in s or (("dwell" in s) and ("terminal" in s)):
+        if "terminal dwell" in s:
             return "terminal_dwell_hours"
-        if "dwell time" in s:
+        if "dwell time" in s and "terminal" in s:
             return "terminal_dwell_hours"
         return None
-
-    if col_measure is None:
-        raise RuntimeError("STB sheet missing measure column, cannot map metrics")
 
     m["metric"] = m[col_measure].apply(metric_map)
     m = m.dropna(subset=["metric"])
@@ -166,14 +214,23 @@ def melt_wide(df: pd.DataFrame) -> pd.DataFrame:
     if "terminal_dwell_hours" not in pivot.columns:
         pivot["terminal_dwell_hours"] = pd.NA
 
-    pivot["source_url"] = STB_XLSX_URL
+    pivot["source_url"] = source_url
     pivot["ingested_at_utc"] = utc_now_iso()
     return pivot
 
 
 def load_hist() -> pd.DataFrame:
     if not os.path.exists(OUT_HIST):
-        return pd.DataFrame(columns=["week_end_date", "carrier", "train_speed_mph", "terminal_dwell_hours", "source_url", "ingested_at_utc"])
+        return pd.DataFrame(
+            columns=[
+                "week_end_date",
+                "carrier",
+                "train_speed_mph",
+                "terminal_dwell_hours",
+                "source_url",
+                "ingested_at_utc",
+            ]
+        )
     return pd.read_csv(OUT_HIST)
 
 
@@ -210,15 +267,18 @@ def latest_value(df: pd.DataFrame, carrier: str, metric: str) -> Optional[float]
 
 
 def main() -> int:
-    content = fetch_xlsx()
+    latest_url = discover_latest_weekly_xlsx_url()
+    content = fetch_xlsx(latest_url)
+
     wide = read_any_sheet_wide(content)
-    clean = melt_wide(wide)
+    clean = melt_wide(wide, source_url=latest_url)
     hist = update_hist(clean)
 
-    out = {
+    out: Dict[str, object] = {
         "generated_at_utc": utc_now_iso(),
-        "source_url": STB_XLSX_URL,
-        "carriers": {}
+        "source_page": STB_RAIL_SERVICE_PAGE,
+        "source_url": latest_url,
+        "carriers": {},
     }
 
     for c in CARRIERS:
@@ -235,9 +295,7 @@ def main() -> int:
             }
         }
 
-        # latest week for carrier
-        d = hist[hist["carrier"].str.upper() == c].copy()
-        d = d.sort_values("week_end_date")
+        d = hist[hist["carrier"].str.upper() == c].copy().sort_values("week_end_date")
         out["carriers"][c]["week_end_date"] = None if d.empty else str(d.iloc[-1]["week_end_date"])
 
     os.makedirs("data", exist_ok=True)
