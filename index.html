@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>US Inland Logistics Risk</title>
+  <style>
+    body { font-family: sans-serif; margin: 40px; }
+    .box { padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+    .LOW { background: #e7f5e6; }
+    .MODERATE { background: #fff3cd; }
+    .CRITICAL { background: #f8d7da; }
+    pre { background: #f4f4f4; padding: 12px; }
+  </style>
+</head>
+<body>
+
+<h1>US Inland Logistics Early Warning</h1>
+
+<div id="risk" class="box"></div>
+
+<h2>Raw Signals</h2>
+<pre id="raw"></pre>
+
+<script>
+async function load() {
+  const risk = await fetch("data/composite_risk_score.json").then(r => r.json());
+  document.getElementById("risk").className = "box " + risk.risk_level;
+  document.getElementById("risk").innerHTML =
+    "<b>Risk Score:</b> " + risk.risk_score +
+    "<br><b>Level:</b> " + risk.risk_level +
+    "<br><b>Primary Driver:</b> " + risk.primary_driver;
+
+  document.getElementById("raw").textContent =
+    JSON.stringify(risk, null, 2);
+}
+load();
+</script>
+
+</body>
+</html>
