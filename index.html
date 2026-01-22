@@ -4,62 +4,46 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>US Inland Logistics Risk Monitor</title>
-  <meta name="description" content="Early warning supply chain dashboard for Mississippi River levels, barge traffic, and rail congestion." />
-  
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    /* --- DARK THEME STYLING --- */
-    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0b0f14; color: #e7eef7; }
+    :root { --bg: #0b0f14; --panel: #161b22; --border: #30363d; --text: #e7eef7; --mute: #8b949e; --accent: #3b82f6; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
     .wrap { max-width: 1200px; margin: 0 auto; padding: 20px; }
     
-    header { margin-bottom: 24px; border-bottom: 1px solid #2c3e50; padding-bottom: 16px; }
-    h1 { font-size: 24px; margin: 0 0 8px 0; font-weight: 600; letter-spacing: -0.5px; }
-    .sub { opacity: 0.7; font-size: 14px; }
-    .badges { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; font-size: 12px; }
-    .badge { background: #1c2530; padding: 4px 8px; border-radius: 4px; color: #94a3b8; border: 1px solid #2c3e50; }
-    .badge span { color: #fff; font-weight: 600; }
-
-    /* --- GRID LAYOUT --- */
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+    header { border-bottom: 1px solid var(--border); padding-bottom: 20px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.5px; }
+    .badges { display: flex; gap: 12px; margin-top: 12px; font-size: 13px; color: var(--mute); flex-wrap: wrap; }
+    .badge { background: #21262d; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); }
     
-    .panel { background: #161b22; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
-    .head { background: #21262d; padding: 12px 16px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 24px; }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+    .head { padding: 14px 18px; background: #21262d; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
     .label { font-weight: 600; font-size: 14px; color: #c9d1d9; }
     
-    .chart-box { padding: 16px; height: 250px; position: relative; }
-    .score-box { padding: 32px; text-align: center; }
+    .chart-box { height: 240px; padding: 10px; position: relative; }
+    .score-box { padding: 30px; text-align: center; }
     
-    /* --- SCORE COLORS --- */
-    .big-score { font-size: 64px; font-weight: 700; line-height: 1; margin-bottom: 8px; }
+    .big-score { font-size: 72px; font-weight: 700; margin-bottom: 8px; line-height: 1; }
     .risk-CRITICAL { color: #ef4444; }
     .risk-MODERATE { color: #f59e0b; }
     .risk-LOW { color: #10b981; }
-    .driver-text { font-size: 16px; color: #8b949e; margin-top: 8px; }
     
-    /* --- CONTROLS --- */
-    .controls { display: flex; gap: 10px; font-size: 12px; align-items: center; }
-    select { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; padding: 4px; border-radius: 4px; }
-    button { background: #238636; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #2ea043; }
+    .driver-text { font-size: 14px; color: var(--mute); text-transform: uppercase; letter-spacing: 1px; }
 
-    /* --- DATA TABLE --- */
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #21262d; }
-    th { color: #8b949e; font-weight: 600; }
-    td.num { text-align: right; font-family: monospace; }
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 0; }
+    th, td { text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+    th { color: var(--mute); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+    td.num { text-align: right; font-family: "SF Mono", Consolas, monospace; font-size: 14px; }
+
+    /* Controls */
+    select { background: #0d1117; color: var(--text); border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+    button { background: #238636; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+    button:hover { background: #2ea043; }
     
-    .audit-section { margin-top: 40px; border-top: 1px solid #30363d; padding-top: 20px; }
-    .audit-links a { color: #58a6ff; text-decoration: none; margin-right: 12px; font-size: 13px; }
-    
-    /* --- OVERLAY FOR MISSING DATA --- */
-    .chart-overlay {
-      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(11, 15, 20, 0.85); color: #f59e0b; font-weight: 600;
-      pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 10;
-    }
-    .chart-overlay.visible { opacity: 1; }
+    .overlay { position: absolute; inset: 0; background: rgba(11,15,20,0.9); display: flex; align-items: center; justify-content: center; color: #f59e0b; font-weight: 600; opacity: 0; pointer-events: none; transition: 0.2s; z-index: 10; }
+    .overlay.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -67,37 +51,31 @@
 <div class="wrap">
   <header>
     <h1>US Inland Logistics Risk Monitor</h1>
-    <div class="sub">Early warning dashboard for Mississippi River drafts, Locks 27 congestion, and Rail spillover.</div>
-    <div class="badges" id="statusBadges">
-      <div class="badge">Loading metadata...</div>
-    </div>
+    <div class="badges" id="statusBadges">Loading...</div>
   </header>
 
   <div class="grid">
-    
     <div class="panel">
-      <div class="head"><div class="label">Supply Chain Risk Score (0-100)</div></div>
+      <div class="head"><div class="label">Composite Risk Score</div></div>
       <div class="score-box">
         <div class="big-score" id="riskScore">--</div>
         <div class="driver-text" id="riskLevel">Loading...</div>
-        <div class="driver-text" style="font-size: 13px; margin-top:12px;">
-          Primary Driver: <span id="primaryDriver" style="color:#e7eef7">--</span>
+        <div style="margin-top: 16px; font-size: 13px; color: var(--mute);">
+          Primary Driver: <span id="primaryDriver" style="color: var(--text); font-weight: 600;">--</span>
         </div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="head"><div class="label">Risk Drivers (Contribution)</div></div>
-      <div class="chart-box">
-        <canvas id="driverChart"></canvas>
-      </div>
+      <div class="head"><div class="label">Risk Factors</div></div>
+      <div class="chart-box"><canvas id="driverChart"></canvas></div>
     </div>
 
     <div class="panel">
-      <div class="head"><div class="label">30-Day Risk Trend</div></div>
+      <div class="head"><div class="label">90-Day Risk Trend</div></div>
       <div class="chart-box">
         <canvas id="riskHistoryChart"></canvas>
-        <div id="riskHistMsg" class="chart-overlay">Insufficient History</div>
+        <div id="riskHistMsg" class="overlay">No History</div>
       </div>
     </div>
 
@@ -117,346 +95,238 @@
       </div>
       <div class="chart-box">
         <canvas id="riverChart"></canvas>
-        <div id="riverMsg" class="chart-overlay">Data Unavailable (Try Flow)</div>
+        <div id="riverMsg" class="overlay">Data Unavailable (Try Flow)</div>
       </div>
     </div>
 
     <div class="panel">
-      <div class="head">
-        <div class="label">Locks 27 Volume (Count)</div> 
-      </div>
+      <div class="head"><div class="label">Locks 27 Volume (Count)</div></div>
       <div class="chart-box">
         <canvas id="bargeChart"></canvas>
-        <div id="bargeMsg" class="chart-overlay">No Barge History</div>
+        <div id="bargeMsg" class="overlay">No Data</div>
       </div>
     </div>
 
     <div class="panel">
       <div class="head">
-        <div class="label">Rail Congestion History</div>
+        <div class="label">Rail Metrics</div>
         <div class="controls">
           <select id="railCarrier">
             <option value="UP">Union Pacific</option>
             <option value="BNSF">BNSF</option>
           </select>
           <select id="railMetric">
-            <option value="terminal_dwell_hours">Terminal Dwell (hr)</option>
-            <option value="train_speed_mph">Train Speed (mph)</option>
+            <option value="terminal_dwell_hours">Dwell (hr)</option>
+            <option value="train_speed_mph">Speed (mph)</option>
           </select>
         </div>
       </div>
       <div class="chart-box">
         <canvas id="railChart"></canvas>
-        <div id="railMsg" class="chart-overlay">No Rail History</div>
+        <div id="railMsg" class="overlay">No Data</div>
       </div>
     </div>
-
   </div>
 
-  <div class="audit-section">
-    <div class="head" style="background:none; border:none; padding-left:0;">
-      <div class="label">Latest Signal Audit</div>
-      <button id="refreshBtn">Refresh Data</button>
+  <div class="panel" style="margin-top: 24px; height: auto;">
+    <div class="head">
+      <div class="label">Signal Audit</div>
+      <button id="refreshBtn">Refresh</button>
     </div>
-    <div class="panel" style="height: auto;">
-      <table id="signalsTable">
-        <thead>
-          <tr>
-            <th>Signal</th>
-            <th>Value</th>
-            <th>Context / Delta</th>
-          </tr>
-        </thead>
-        <tbody><tr><td colspan="3">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div class="audit-links" style="margin-top:12px;">
-      Data Sources: 
-      <a href="data/composite_risk_score.json" target="_blank">Risk JSON</a>
-      <a href="data/river_status.json" target="_blank">River JSON</a>
-      <a href="data/barge_status.json" target="_blank">Barge JSON</a>
-      <a href="data/rail_status.json" target="_blank">Rail JSON</a>
-    </div>
+    <table id="signalsTable">
+      <thead><tr><th>Signal</th><th>Latest Value</th><th>Delta / Note</th></tr></thead>
+      <tbody><tr><td colspan="3">Loading...</td></tr></tbody>
+    </table>
   </div>
 </div>
 
 <script>
-  // --- UTILITIES ---
   const $ = id => document.getElementById(id);
   const safeNum = v => (v === null || v === undefined) ? null : Number(v);
-  const hoursAgo = iso => {
-    if(!iso) return "--";
-    const diff = (new Date() - new Date(iso)) / 1000 / 3600;
-    return diff.toFixed(2) + "h ago";
+  const ago = iso => iso ? ((new Date() - new Date(iso))/36e5).toFixed(1) + "h ago" : "--";
+
+  // CSV Parser
+  function parseCSV(txt) {
+    if (!txt) return [];
+    const lines = txt.trim().split('\n');
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    return lines.slice(1).map(line => {
+      const row = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+      const obj = {}; headers.forEach((h, i) => obj[h] = row[i]);
+      return obj;
+    });
+  }
+
+  // Chart Styling
+  Chart.defaults.color = '#8b949e';
+  Chart.defaults.borderColor = '#30363d';
+  const commonOptions = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    scales: { x: { display: false }, y: { border: { display: false }, grid: { display: false } } },
+    elements: { point: { radius: 0, hitRadius: 10 }, line: { borderWidth: 2, tension: 0.3 } }
   };
 
-  // ROBUST CSV PARSER
-  // Returns array of objects keyed by header name
-  function parseCSV(text) {
-    if (!text) return [];
-    const lines = text.trim().split('\n');
-    if (lines.length < 2) return [];
-    
-    // Normalize headers: strip quotes, whitespace
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-    
-    const data = [];
-    for (let i = 1; i < lines.length; i++) {
-      const row = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
-      if (row.length !== headers.length) continue;
-      
-      const obj = {};
-      headers.forEach((h, idx) => { obj[h] = row[idx]; });
-      data.push(obj);
-    }
-    return data;
-  }
-
-  // --- CHART MANAGEMENT ---
   let charts = {};
-
-  function toggleOverlay(id, show) {
-    const el = document.getElementById(id === 'riverChart' ? 'riverMsg' : 
-                                     id === 'railChart' ? 'railMsg' : 
-                                     id === 'bargeChart' ? 'bargeMsg' : 'riskHistMsg');
-    if(el) el.className = show ? 'chart-overlay visible' : 'chart-overlay';
-  }
-
-  function destroyChart(id) {
-    if (charts[id]) { charts[id].destroy(); charts[id] = null; }
-  }
-
-  function makeLineChart(id, label, labels, data, color) {
-    destroyChart(id);
-
-    // Overlay check
-    if (!data || data.length === 0) {
-      toggleOverlay(id, true);
-      return;
-    } else {
-      toggleOverlay(id, false);
-    }
-
+  function renderChart(id, labels, data, color, type='line') {
+    if (charts[id]) charts[id].destroy();
     const ctx = $(id).getContext('2d');
+    
+    // Gradient Fill
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, color + '40'); // 25% opacity
+    gradient.addColorStop(1, color + '00'); // 0% opacity
+
     charts[id] = new Chart(ctx, {
-      type: 'line',
+      type: type,
       data: {
         labels: labels,
         datasets: [{
-          label: label,
           data: data,
           borderColor: color,
-          backgroundColor: color + '15', // low opacity
-          borderWidth: 2,
-          pointRadius: 2,
-          fill: true,
-          tension: 0.2
+          backgroundColor: type==='line' ? gradient : color,
+          fill: true
         }]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { display: false },
-          y: { 
-            grid: { color: '#2c3e50' },
-            ticks: { color: '#8b949e' }
-          }
-        }
-      }
+      options: commonOptions
     });
   }
 
-  function makeBarChart(id, labels, data) {
-    destroyChart(id);
-    const ctx = $(id).getContext('2d');
-    charts[id] = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: labels,
-        datasets: [{
-          data: data,
-          backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444'],
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, max: 100, grid: { color: '#2c3e50' } },
-          x: { ticks: { color: '#8b949e' } }
-        }
-      }
-    });
+  function toggleOverlay(id, show) {
+    const el = document.getElementById(id === 'riverChart' ? 'riverMsg' : id === 'railChart' ? 'railMsg' : id === 'bargeChart' ? 'bargeMsg' : 'riskHistMsg');
+    if(el) el.className = show ? 'overlay show' : 'overlay';
   }
 
-  // --- DATA LOADING ---
+  // --- Loaders ---
 
   async function loadRiskHistory() {
     try {
       const r = await fetch('data/history/risk_daily.csv');
-      if (!r.ok) throw new Error("No risk history");
-      const text = await r.text();
-      const rows = parseCSV(text);
+      if(!r.ok) throw new Error();
+      const rows = parseCSV(await r.text());
+      const dates = rows.map(r => r.timestamp_utc.slice(0,10));
+      const vals = rows.map(r => parseFloat(r.risk_score));
       
-      const dates = rows.map(r => r.timestamp_utc ? r.timestamp_utc.substring(0,10) : '');
-      const scores = rows.map(r => parseFloat(r.risk_score));
-      
-      makeLineChart('riskHistoryChart', 'Risk Score', dates, scores, '#ef4444');
-    } catch (e) { console.warn(e); toggleOverlay('riskHistoryChart', true); }
+      if(vals.length === 0) throw new Error();
+      renderChart('riskHistoryChart', dates, vals, '#ef4444');
+      toggleOverlay('riskHistoryChart', false);
+    } catch { toggleOverlay('riskHistoryChart', true); }
   }
 
   async function loadBargeHistory() {
     try {
       const r = await fetch('data/history/barge_locks27_weekly.csv');
-      if (!r.ok) throw new Error("No barge history");
-      const text = await r.text();
-      const rows = parseCSV(text);
-
-      const dates = rows.map(r => r.week_end_date);
-      // Logic: Prioritize 'total_barges', fallback to 'total_tons' if old file
-      const vals = rows.map(r => {
-        const v = r.total_barges || r.total_tons;
-        return parseFloat(v);
-      });
+      if(!r.ok) throw new Error();
+      const rows = parseCSV(await r.text());
       
-      makeLineChart('bargeChart', 'Volume', dates, vals, '#f59e0b');
-    } catch(e) { console.warn(e); toggleOverlay('bargeChart', true); }
+      // DECLUTTER: Last 26 weeks only
+      const recent = rows.slice(-26);
+      
+      const dates = recent.map(r => r.week_end_date);
+      const vals = recent.map(r => parseFloat(r.total_barges || r.total_tons || 0));
+      renderChart('bargeChart', dates, vals, '#f59e0b');
+      toggleOverlay('bargeChart', false);
+    } catch { toggleOverlay('bargeChart', true); }
   }
 
-  async function loadRailHistoryForChart() {
+  async function loadRailHistory() {
     const carrier = $('railCarrier').value;
-    const metric = $('railMetric').value; 
-    
+    const metric = $('railMetric').value;
     try {
       const r = await fetch('data/history/rail_weekly.csv');
-      if(!r.ok) return;
-      const text = await r.text();
-      const rows = parseCSV(text);
+      if(!r.ok) throw new Error();
+      const rows = parseCSV(await r.text()).filter(r => r.carrier === carrier);
       
-      const filtered = rows.filter(r => r.carrier === carrier);
-      const dates = filtered.map(r => r.week_end_date);
-      const vals = filtered.map(r => parseFloat(r[metric]));
-
-      makeLineChart('railChart', carrier + ' ' + metric, dates, vals, '#3b82f6');
-    } catch (e) { console.warn(e); toggleOverlay('railChart', true); }
+      // DECLUTTER: Last 26 weeks only
+      const recent = rows.slice(-26);
+      
+      const dates = recent.map(r => r.week_end_date);
+      const vals = recent.map(r => parseFloat(r[metric]));
+      
+      if(vals.length === 0) throw new Error();
+      renderChart('railChart', dates, vals, '#3b82f6');
+      toggleOverlay('railChart', false);
+    } catch { toggleOverlay('railChart', true); }
   }
 
-  // --- MAIN ORCHESTRATION ---
+  // --- Main ---
 
   async function loadAll() {
-    // 1. Fetch JSONs
-    const [riskRes, riverRes, bargeRes, railRes] = await Promise.all([
-      fetch('data/composite_risk_score.json').catch(()=>null),
-      fetch('data/river_status.json').catch(()=>null),
-      fetch('data/barge_status.json').catch(()=>null),
-      fetch('data/rail_status.json').catch(()=>null)
+    // 1. Load JSONs
+    const [risk, river, barge, rail] = await Promise.all([
+      fetch('data/composite_risk_score.json').then(r=>r.json()).catch(()=>({})),
+      fetch('data/river_status.json').then(r=>r.json()).catch(()=>({})),
+      fetch('data/barge_status.json').then(r=>r.json()).catch(()=>({})),
+      fetch('data/rail_status.json').then(r=>r.json()).catch(()=>({}))
     ]);
 
-    const risk = riskRes ? await riskRes.json() : {};
-    const river = riverRes ? await riverRes.json() : {};
-    const barge = bargeRes ? await bargeRes.json() : {};
-    const rail = railRes ? await railRes.json() : {};
-
-    // 2. Render Risk Score Panel
-    if (risk.risk_score !== undefined) {
-      const el = $('riskScore');
-      el.innerText = Math.round(risk.risk_score);
-      el.className = 'big-score risk-' + risk.risk_level;
+    // 2. Score
+    if(risk.risk_score !== undefined) {
+      $('riskScore').innerText = Math.round(risk.risk_score);
+      $('riskScore').className = 'big-score risk-' + risk.risk_level;
       $('riskLevel').innerText = risk.risk_level + " RISK";
-      $('riskLevel').className = 'driver-text risk-' + risk.risk_level;
       $('primaryDriver').innerText = (risk.primary_driver || 'None').toUpperCase();
     }
-
-    // 3. Render Driver Chart
-    if (risk.drivers) {
-      const labels = risk.drivers.map(d => d.name.toUpperCase());
-      const data = risk.drivers.map(d => d.score);
-      makeBarChart('driverChart', labels, data);
-    }
-
-    // 4. Render River Chart (with Empty Check)
-    const site = $('riverSite').value;
-    const rMet = $('riverMetric').value;
-    let rDates = [], rVals = [];
     
-    if (river.sites && river.sites[site] && river.sites[site][rMet]) {
-      const seriesObj = river.sites[site][rMet].series_7d; // Expected { t_utc: [], v: [] }
-      if (seriesObj && seriesObj.t_utc && seriesObj.v) {
-        rDates = seriesObj.t_utc;
-        rVals = seriesObj.v;
-      }
+    // 3. Driver Chart
+    if(risk.drivers) {
+      renderChart('driverChart', risk.drivers.map(d=>d.name), risk.drivers.map(d=>d.score), '#3b82f6', 'bar');
     }
-    // If array empty, makeLineChart will handle overlay
-    makeLineChart('riverChart', rMet, rDates, rVals, '#10b981');
 
-    // 5. Render History Charts
+    // 4. River Chart (With Downsampling)
+    const s = $('riverSite').value;
+    const m = $('riverMetric').value;
+    const series = river.sites?.[s]?.[m]?.series_7d;
+    
+    if(series && series.v && series.v.length > 0) {
+      // DECLUTTER: Filter to every 16th point (~4 hour intervals)
+      const dates = series.t_utc.filter((_, i) => i % 16 === 0);
+      const vals = series.v.filter((_, i) => i % 16 === 0);
+      
+      renderChart('riverChart', dates, vals, '#10b981');
+      toggleOverlay('riverChart', false);
+    } else {
+      toggleOverlay('riverChart', true);
+    }
+
+    // 5. Histories
     await loadRiskHistory();
     await loadBargeHistory();
-    await loadRailHistoryForChart();
+    await loadRailHistory();
 
-    // 6. Populate Audit Table
-    const tbody = $('signalsTable').querySelector('tbody');
+    // 6. Audit Table
     let html = '';
-
-    // River Row
-    const rSite = river.sites ? river.sites[$('riverSite').value] : null;
-    const gh = rSite ? (rSite[rMet] || {}) : {};
-    html += `<tr>
-      <td>${$('riverSite').options[$('riverSite').selectedIndex].text}</td>
-      <td class="num">${safeNum(gh.latest_value)?.toFixed(2) ?? '--'}</td>
-      <td class="sub">7d Delta: ${safeNum(gh.delta_7d)?.toFixed(2) ?? '--'}</td>
-    </tr>`;
-
-    // Barge Row
-    const l27 = barge.locks_27 || {};
-    html += `<tr>
-      <td>Locks 27 Volume</td>
-      <td class="num">${safeNum(l27.value)?.toFixed(0) ?? '--'}</td>
-      <td class="sub">4w Delta: ${safeNum(l27.delta_4w)?.toFixed(0) ?? '--'} (${l27.unit || 'cnt'})</td>
-    </tr>`;
-
-    // Rail Row
-    const cName = $('railCarrier').value;
-    const rMetName = $('railMetric').value;
-    const up = rail.carriers && rail.carriers[cName] ? rail.carriers[cName].metrics : null;
-    const rValObj = up ? up[rMetName] : {};
     
-    html += `<tr>
-      <td>${cName} ${rMetName === 'terminal_dwell_hours' ? 'Dwell' : 'Speed'}</td>
-      <td class="num">${safeNum(rValObj.value)?.toFixed(1) ?? '--'}</td>
-      <td class="sub">4w Delta: ${safeNum(rValObj.delta_4w)?.toFixed(1) ?? '--'}</td>
-    </tr>`;
-
-    tbody.innerHTML = html;
-
-    // 7. Update Badges
-    const times = [
-      { l: 'Risk Score', t: risk.generated_at_utc },
-      { l: 'River', t: river.generated_at_utc },
-      { l: 'Barge', t: barge.generated_at_utc },
-      { l: 'Rail', t: rail.generated_at_utc }
-    ];
-    let badgesHtml = '';
-    times.forEach(x => {
-      if (x.t) badgesHtml += `<div class="badge">${x.l}: <span>${hoursAgo(x.t)}</span></div>`;
-    });
-    $('statusBadges').innerHTML = badgesHtml;
+    // River
+    const rData = river.sites?.[s]?.[m] || {};
+    html += `<tr><td>St. Louis ${m==='gage_height_ft'?'Stage':'Flow'}</td><td class="num">${safeNum(rData.latest_value)?.toFixed(2)??'--'}</td><td class="num">7d Delta: ${safeNum(rData.delta_7d)?.toFixed(2)??'--'}</td></tr>`;
+    
+    // Barge
+    const bData = barge.locks_27 || {};
+    html += `<tr><td>Locks 27 Count</td><td class="num">${safeNum(bData.value)?.toFixed(0)??'--'}</td><td class="num">4w Delta: ${safeNum(bData.delta_4w)?.toFixed(0)??'--'}</td></tr>`;
+    
+    // Rail
+    const rrData = rail.carriers?.[$('railCarrier').value]?.metrics?.[$('railMetric').value] || {};
+    html += `<tr><td>${$('railCarrier').value} ${$('railMetric').value}</td><td class="num">${safeNum(rrData.value)?.toFixed(1)??'--'}</td><td class="num">4w Delta: ${safeNum(rrData.delta_4w)?.toFixed(1)??'--'}</td></tr>`;
+    
+    $('signalsTable').querySelector('tbody').innerHTML = html;
+    
+    // Badges
+    $('statusBadges').innerHTML = `
+      <div class="badge">Risk: ${ago(risk.generated_at_utc)}</div>
+      <div class="badge">River: ${ago(river.generated_at_utc)}</div>
+      <div class="badge">Barge: ${ago(barge.generated_at_utc)}</div>
+    `;
   }
 
-  // --- EVENT LISTENERS ---
-  $('riverSite').addEventListener('change', loadAll);
-  $('riverMetric').addEventListener('change', loadAll);
-  $('railCarrier').addEventListener('change', loadRailHistoryForChart);
-  $('railMetric').addEventListener('change', loadRailHistoryForChart);
-  $('refreshBtn').addEventListener('click', loadAll);
+  $('riverSite').onchange = loadAll;
+  $('riverMetric').onchange = loadAll;
+  $('railCarrier').onchange = loadRailHistory;
+  $('railMetric').onchange = loadRailHistory;
+  $('refreshBtn').onclick = loadAll;
 
-  // Init
   loadAll();
-
 </script>
 </body>
 </html>
