@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-22T07:55:59.167273Z",
+  "generated_at_utc": "2026-01-22T08:12:28.790462Z",
   "risk_score": 40.0,
   "risk_level": "LOW",
   "primary_driver": "river",
@@ -8,8 +8,8 @@
       "name": "river",
       "score": 40.0,
       "raw": {
-        "delta_7d_ft": -5.3100000000000005,
-        "latest_stage_ft": -2.45
+        "delta_7d_ft": -5.46,
+        "latest_stage_ft": -2.48
       }
     },
     {
