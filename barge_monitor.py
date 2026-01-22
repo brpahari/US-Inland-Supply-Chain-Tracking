@@ -108,6 +108,7 @@ def fetch_locks27() -> pd.DataFrame:
 
     out["week_end_date"] = pd.to_datetime(out["week_end_date"], errors="coerce").dt.strftime("%Y-%m-%d")
     out["total_tons"] = pd.to_numeric(out["total_tons"], errors="coerce")
+
     out = out.dropna(subset=["week_end_date", "total_tons"])
     out = out.sort_values("week_end_date")
 
@@ -116,39 +117,33 @@ def fetch_locks27() -> pd.DataFrame:
     return out
 
 
-def drop_trailing_placeholder_zero(df: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str]]:
-    """
-    If the latest week is 0 but the last 12 weeks are consistently nonzero,
-    treat the trailing 0 as a missing report placeholder and drop it from the dataset
-    so history latest stays meaningful.
-    """
-    if df.empty:
-        return df, None
-
-    d = df.copy().sort_values("week_end_date")
-    d["total_tons"] = pd.to_numeric(d["total_tons"], errors="coerce")
-    d = d.dropna(subset=["total_tons"])
-
+def drop_latest_zero_if_placeholder(d: pd.DataFrame) -> Tuple[pd.DataFrame, Optional[str]]:
     if d.empty:
         return d, None
 
-    last_val = float(d.iloc[-1]["total_tons"])
-    if last_val != 0.0:
-        return d, None
+    df = d.copy().sort_values("week_end_date")
+    df["total_tons"] = pd.to_numeric(df["total_tons"], errors="coerce")
+    df = df.dropna(subset=["total_tons"])
+    if df.empty:
+        return df, None
 
-    prev = d.iloc[:-1].tail(12)
-    if prev.empty:
-        return d, None
+    last_val = float(df.iloc[-1]["total_tons"])
+    if last_val != 0.0:
+        return df, None
+
+    prev = df.iloc[:-1].tail(8)
+    if len(prev) < 5:
+        return df, None
 
     prev_vals = prev["total_tons"].astype(float)
-    nonzero_ratio = float((prev_vals > 0).mean())
-    median_prev = float(prev_vals.median())
+    nonzero = int((prev_vals > 0).sum())
+    med = float(prev_vals.median())
 
-    if nonzero_ratio >= 0.9 and median_prev >= 25.0:
-        dropped_week = str(d.iloc[-1]["week_end_date"])
-        d = d.iloc[:-1].copy()
-        return d, f"Dropped trailing placeholder zero at {dropped_week}"
-    return d, None
+    if nonzero >= 7 and med >= 50.0:
+        dropped_week = str(df.iloc[-1]["week_end_date"])
+        df2 = df.iloc[:-1].copy()
+        return df2, f"dropped trailing zero placeholder at {dropped_week}"
+    return df, None
 
 
 def load_hist() -> pd.DataFrame:
@@ -163,13 +158,14 @@ def update_history(new_df: pd.DataFrame) -> pd.DataFrame:
     combined = pd.concat([hist, new_df], ignore_index=True)
     combined = combined.drop_duplicates(subset=["week_end_date"], keep="last")
     combined = combined.sort_values(["week_end_date"])
-    combined.to_csv(OUT_HIST, index=False)
     return combined
 
 
+def write_history(df: pd.DataFrame) -> None:
+    df.to_csv(OUT_HIST, index=False)
+
+
 def delta_4w(df: pd.DataFrame) -> Optional[float]:
-    if df.empty:
-        return None
     d = df.copy()
     d["total_tons"] = pd.to_numeric(d["total_tons"], errors="coerce")
     d = d.dropna(subset=["total_tons"]).sort_values("week_end_date")
@@ -180,19 +176,18 @@ def delta_4w(df: pd.DataFrame) -> Optional[float]:
 
 def main() -> int:
     locks = fetch_locks27()
+    locks, note_new = drop_latest_zero_if_placeholder(locks)
 
-    locks, note = drop_trailing_placeholder_zero(locks)
+    combined = update_history(locks)
+    combined, note_hist = drop_latest_zero_if_placeholder(combined)
 
-    hist = update_history(locks)
-
-    hist2, hist_note = drop_trailing_placeholder_zero(hist)
+    write_history(combined)
 
     latest_week = None
     latest_val = None
-
-    if not hist2.empty:
-        latest_week = str(hist2.iloc[-1]["week_end_date"])
-        latest_val = float(pd.to_numeric(hist2.iloc[-1]["total_tons"], errors="coerce"))
+    if not combined.empty:
+        latest_week = str(combined.iloc[-1]["week_end_date"])
+        latest_val = float(pd.to_numeric(combined.iloc[-1]["total_tons"], errors="coerce"))
 
     status: Dict[str, object] = {
         "generated_at_utc": utc_now_iso(),
@@ -200,22 +195,22 @@ def main() -> int:
         "locks_27": {
             "week_end_date": latest_week,
             "value": latest_val,
-            "delta_4w": delta_4w(hist2),
+            "delta_4w": delta_4w(combined),
             "unit": "tons",
         },
     }
 
-    combined_note = note or hist_note
-    if combined_note:
-        status["locks_27"]["note"] = combined_note
+    note = note_new or note_hist
+    if note:
+        status["locks_27"]["note"] = note
 
     os.makedirs("data", exist_ok=True)
     with open(OUT_STATUS, "w", encoding="utf-8") as f:
         json.dump(status, f, indent=2)
 
     print(f"Updated {OUT_HIST} and {OUT_STATUS}")
-    if combined_note:
-        print(combined_note)
+    if note:
+        print(note)
     return 0
 
 
