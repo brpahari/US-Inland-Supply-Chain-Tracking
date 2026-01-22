@@ -1,4 +1,4 @@
-name: Update Logistics Signals
+name: Update Inland Logistics Signals
 
 on:
   schedule:
@@ -11,12 +11,11 @@ permissions:
 jobs:
   update:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -28,22 +27,16 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run pipeline
-        id: runpipe
+        id: pipeline
+        continue-on-error: true
         run: |
-          rm -f pipeline_status.env
           bash scripts/run_pipeline.sh
-        continue-on-error: false
 
-      - name: Load status flags
+      - name: Load status
         if: always()
         run: |
           if [ -f pipeline_status.env ]; then
-            cat pipeline_status.env >> "$GITHUB_ENV"
-          else
-            echo "RIVER_RC=1" >> "$GITHUB_ENV"
-            echo "BARGE_RC=1" >> "$GITHUB_ENV"
-            echo "RAIL_RC=1" >> "$GITHUB_ENV"
-            echo "RISK_RC=1" >> "$GITHUB_ENV"
+            cat pipeline_status.env >> $GITHUB_ENV
           fi
 
       - name: Commit data if changed
@@ -52,24 +45,31 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/*.json data/history/*.csv || true
+          git add data/river_status.json data/barge_status.json data/composite_risk_score.json || true
+          git add data/history || true
+          git add data/rail_status.json || true
 
           if git diff --staged --quiet; then
-            echo "No changes to commit"
+            echo "No changes to commit."
           else
-            git commit -m "data update [skip ci]"
+            git commit -m "data: update inland logistics signals [skip ci]"
             git push
           fi
 
-      - name: Watchdog fail on rail format break
-        if: always()
+      - name: Fail if rail failed
+        if: env.RAIL_RC != '0'
         run: |
-          echo "river rc $RIVER_RC"
-          echo "barge rc $BARGE_RC"
-          echo "rail rc $RAIL_RC"
-          echo "risk rc $RISK_RC"
+          echo "Rail failed with rc=$RAIL_RC"
+          exit 1
 
-          if [ "$RAIL_RC" -ne 0 ]; then
-            echo "Rail format watchdog triggered"
-            exit 1
-          fi
+      - name: Fail if river or barge failed
+        if: env.RIVER_RC != '0' || env.BARGE_RC != '0'
+        run: |
+          echo "River or barge failed"
+          exit 1
+
+      - name: Fail if risk failed
+        if: env.RISK_RC != '0'
+        run: |
+          echo "Risk failed"
+          exit 1
