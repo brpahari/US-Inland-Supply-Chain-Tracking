@@ -3,13 +3,10 @@
 river_monitor.py
 
 Fetch USGS instantaneous values for Mississippi River gauges and compute
-simple early warning features.
+early warning features plus a downsampled 7 day series for visualization.
 
 Outputs
   data/river_status.json
-
-Data source
-  USGS Water Services Instantaneous Values (iv) JSON
 """
 
 from __future__ import annotations
@@ -27,7 +24,6 @@ import requests
 
 USGS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/"
 
-# USGS parameter codes
 PCODE_GAGE_HEIGHT_FT = "00065"
 PCODE_DISCHARGE_CFS = "00060"
 
@@ -42,8 +38,10 @@ SITES = {
     },
 }
 
-DEFAULT_PERIOD = "P7D"  # last 7 days
+DEFAULT_PERIOD = "P7D"
 DEFAULT_TIMEOUT = 30
+
+MAX_SERIES_POINTS = 96  # per metric per site, keeps JSON light
 
 
 @dataclass
@@ -52,8 +50,11 @@ class Point:
     v: float
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def _parse_usgs_time(ts: str) -> datetime:
-    # Example "2026-01-21T18:30:00.000-06:00"
     dt = datetime.fromisoformat(ts)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -84,9 +85,6 @@ def fetch_iv_json(sites: List[str], pcodes: List[str], period: str = DEFAULT_PER
 
 
 def extract_series(payload: Dict[str, Any]) -> Dict[Tuple[str, str], List[Point]]:
-    """
-    Returns mapping (site_no, pcode) -> sorted list of Points in UTC.
-    """
     out: Dict[Tuple[str, str], List[Point]] = {}
     ts_list = payload.get("value", {}).get("timeSeries", [])
     for ts in ts_list:
@@ -95,6 +93,7 @@ def extract_series(payload: Dict[str, Any]) -> Dict[Tuple[str, str], List[Point]
         site_codes = source.get("siteCode", [])
         if site_codes and isinstance(site_codes, list):
             site_no = site_codes[0].get("value")
+
         var = ts.get("variable", {})
         pcode = None
         vcodes = var.get("variableCode", [])
@@ -127,15 +126,31 @@ def extract_series(payload: Dict[str, Any]) -> Dict[Tuple[str, str], List[Point]
     return out
 
 
+def downsample(points: List[Point], max_points: int = MAX_SERIES_POINTS) -> List[Point]:
+    if len(points) <= max_points:
+        return points
+
+    step = (len(points) - 1) / (max_points - 1)
+    keep_idx = []
+    for i in range(max_points):
+        idx = int(round(i * step))
+        keep_idx.append(min(idx, len(points) - 1))
+
+    # de dup in case rounding repeats
+    uniq = []
+    seen = set()
+    for idx in keep_idx:
+        if idx not in seen:
+            seen.add(idx)
+            uniq.append(idx)
+
+    return [points[i] for i in uniq]
+
+
 def summarize(points: List[Point]) -> Dict[str, Any]:
-    """
-    Simple features for a 7 day window.
-    delta_7d uses the earliest available point in the window.
-    """
     latest = points[-1]
     earliest = points[0]
     delta = latest.v - earliest.v
-    # A crude slope per day based on the endpoints
     days = max((latest.t - earliest.t).total_seconds() / 86400.0, 1e-9)
     slope_per_day = delta / days
     return {
@@ -149,6 +164,16 @@ def summarize(points: List[Point]) -> Dict[str, Any]:
     }
 
 
+def build_series(points: List[Point]) -> Dict[str, Any]:
+    ds = downsample(points, MAX_SERIES_POINTS)
+    return {
+        "n_points_raw": len(points),
+        "n_points": len(ds),
+        "t_utc": [p.t.isoformat().replace("+00:00", "Z") for p in ds],
+        "v": [p.v for p in ds],
+    }
+
+
 def main() -> int:
     site_nos = [SITES[k]["site_no"] for k in SITES]
     pcodes = [PCODE_GAGE_HEIGHT_FT, PCODE_DISCHARGE_CFS]
@@ -156,14 +181,16 @@ def main() -> int:
     payload = fetch_iv_json(site_nos, pcodes, period=DEFAULT_PERIOD)
     series = extract_series(payload)
 
-    now_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
     out: Dict[str, Any] = {
-        "generated_at_utc": now_utc,
+        "generated_at_utc": utc_now_iso(),
         "period": DEFAULT_PERIOD,
         "source": {
             "provider": "USGS Water Services NWIS IV",
             "endpoint": USGS_IV_URL,
+            "parameter_codes": {
+                "gage_height_ft": PCODE_GAGE_HEIGHT_FT,
+                "discharge_cfs": PCODE_DISCHARGE_CFS,
+            },
         },
         "sites": {},
     }
@@ -180,10 +207,12 @@ def main() -> int:
         gh = series.get((site_no, PCODE_GAGE_HEIGHT_FT))
         if gh:
             site_block["gage_height_ft"] = summarize(gh)
+            site_block["gage_height_ft"]["series_7d"] = build_series(gh)
 
         q = series.get((site_no, PCODE_DISCHARGE_CFS))
         if q:
             site_block["discharge_cfs"] = summarize(q)
+            site_block["discharge_cfs"]["series_7d"] = build_series(q)
 
         out["sites"][key] = site_block
 
@@ -201,13 +230,10 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except requests.HTTPError as e:
         print(f"HTTP error {e}", file=sys.stderr)
-        return_code = 2
-        raise SystemExit(return_code)
+        raise SystemExit(2)
     except requests.RequestException as e:
         print(f"Network error {e}", file=sys.stderr)
-        return_code = 3
-        raise SystemExit(return_code)
+        raise SystemExit(3)
     except Exception as e:
         print(f"Unexpected error {e}", file=sys.stderr)
-        return_code = 1
-        raise SystemExit(return_code)
+        raise SystemExit(1)
