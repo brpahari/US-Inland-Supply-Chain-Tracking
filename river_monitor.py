@@ -2,188 +2,135 @@
 """
 river_monitor.py
 
-USGS NWIS IV monitor for Mississippi River gauges.
-Writes a compact 7 day series for charting plus summary stats.
+USGS river gauge ingestion for Mississippi River
 
-Output
+Sites
+  St Louis MO 07010000
+  Memphis TN 07032000
+
+Writes
   data/river_status.json
 """
 
 from __future__ import annotations
 
 import json
-import math
 import os
-import sys
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
 
-USGS_IV_URL = "https://waterservices.usgs.gov/nwis/iv/"
-PCODE_GAGE_HEIGHT_FT = "00065"
-PCODE_DISCHARGE_CFS = "00060"
+USGS_IV_JSON = "https://waterservices.usgs.gov/nwis/iv/"
+TIMEOUT = 45
 
 SITES = {
-    "st_louis_mo": {
-        "site_no": "07010000",
-        "label": "Mississippi River at St. Louis, MO",
-    },
-    "memphis_tn": {
-        "site_no": "07032000",
-        "label": "Mississippi River at Memphis, TN",
-    },
+    "st_louis_mo": {"site_no": "07010000", "label": "Mississippi River at St Louis MO"},
+    "memphis_tn": {"site_no": "07032000", "label": "Mississippi River at Memphis TN"},
 }
 
-PERIOD = "P7D"
-TIMEOUT = 40
-MAX_SERIES_POINTS = 168  # 7 days hourly view
+PARAM_GAGE_HEIGHT = "00065"
+PARAM_DISCHARGE = "00060"
 
-
-@dataclass
-class Point:
-    t: datetime
-    v: float
+OUT_STATUS = "data/river_status.json"
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def parse_time(ts: str) -> datetime:
-    dt = datetime.fromisoformat(ts)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
-
-
-def safe_float(x: Any) -> Optional[float]:
-    try:
-        v = float(x)
-        if math.isfinite(v):
-            return v
-        return None
-    except Exception:
-        return None
-
-
-def fetch_iv_json(site_nos: List[str], pcodes: List[str]) -> Dict[str, Any]:
+def fetch_usgs_iv(
+    sites_csv: str,
+    param_csv: str,
+    start_dt_utc: datetime,
+) -> dict:
     params = {
         "format": "json",
-        "sites": ",".join(site_nos),
-        "parameterCd": ",".join(pcodes),
+        "sites": sites_csv,
+        "parameterCd": param_csv,
         "siteStatus": "all",
-        "period": PERIOD,
+        "startDT": start_dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
-    r = requests.get(USGS_IV_URL, params=params, timeout=TIMEOUT)
+    r = requests.get(USGS_IV_JSON, params=params, timeout=TIMEOUT)
     r.raise_for_status()
     return r.json()
 
 
-def extract_series(payload: Dict[str, Any]) -> Dict[Tuple[str, str], List[Point]]:
-    out: Dict[Tuple[str, str], List[Point]] = {}
-    ts_list = payload.get("value", {}).get("timeSeries", [])
-
+def parse_timeseries(payload: dict) -> Dict[Tuple[str, str], List[Tuple[str, float]]]:
+    """
+    Returns dict keyed by (site_no, parameterCd) with list of (time_iso, value)
+    """
+    out: Dict[Tuple[str, str], List[Tuple[str, float]]] = {}
+    ts_list = payload.get("value", {}).get("timeSeries", []) or []
     for ts in ts_list:
-        src = ts.get("sourceInfo", {})
+        source_info = ts.get("sourceInfo", {}) or {}
         site_no = None
-        sc = src.get("siteCode", [])
-        if sc and isinstance(sc, list):
-            site_no = sc[0].get("value")
+        for ident in source_info.get("siteCode", []) or []:
+            if ident.get("value"):
+                site_no = ident.get("value")
+                break
+        var = ts.get("variable", {}) or {}
+        param = var.get("variableCode", [{}])[0].get("value")
 
-        var = ts.get("variable", {})
-        pcode = None
-        vc = var.get("variableCode", [])
-        if vc and isinstance(vc, list):
-            pcode = vc[0].get("value")
-
-        if not site_no or not pcode:
+        if not site_no or not param:
             continue
 
-        blocks = ts.get("values", [])
-        if not blocks:
+        values = ts.get("values", []) or []
+        if not values:
             continue
 
-        pts: List[Point] = []
-        for block in blocks:
-            for row in block.get("value", []):
-                t_raw = row.get("dateTime")
-                v_raw = row.get("value")
-                if not t_raw:
-                    continue
-                v = safe_float(v_raw)
-                if v is None:
-                    continue
-                pts.append(Point(t=parse_time(t_raw), v=v))
+        points: List[Tuple[str, float]] = []
+        for v in values[0].get("value", []) or []:
+            t = v.get("dateTime")
+            x = v.get("value")
+            if t is None or x is None:
+                continue
+            try:
+                fx = float(x)
+            except Exception:
+                continue
+            points.append((t, fx))
 
-        pts.sort(key=lambda p: p.t)
-        if pts:
-            out[(site_no, pcode)] = pts
-
+        if points:
+            out[(site_no, param)] = points
     return out
 
 
-def downsample(points: List[Point], max_points: int) -> List[Point]:
-    if len(points) <= max_points:
-        return points
-    step = (len(points) - 1) / (max_points - 1)
-    idxs = []
-    for i in range(max_points):
-        idxs.append(min(int(round(i * step)), len(points) - 1))
-    uniq = []
-    seen = set()
-    for i in idxs:
-        if i not in seen:
-            seen.add(i)
-            uniq.append(i)
-    return [points[i] for i in uniq]
+def latest_and_earliest(points: List[Tuple[str, float]]) -> Tuple[Optional[str], Optional[float], Optional[str], Optional[float]]:
+    if not points:
+        return None, None, None, None
+    pts = sorted(points, key=lambda p: p[0])
+    e_t, e_v = pts[0]
+    l_t, l_v = pts[-1]
+    return l_t, l_v, e_t, e_v
 
 
-def summarize(points: List[Point]) -> Dict[str, Any]:
-    earliest = points[0]
-    latest = points[-1]
-    delta = latest.v - earliest.v
-    days = max((latest.t - earliest.t).total_seconds() / 86400.0, 1e-9)
-    slope = delta / days
-    return {
-        "earliest_utc": earliest.t.isoformat().replace("+00:00", "Z"),
-        "earliest_value": earliest.v,
-        "latest_utc": latest.t.isoformat().replace("+00:00", "Z"),
-        "latest_value": latest.v,
-        "delta_7d": delta,
-        "slope_per_day": slope,
-        "n_points": len(points),
-    }
-
-
-def build_series(points: List[Point]) -> Dict[str, Any]:
-    ds = downsample(points, MAX_SERIES_POINTS)
-    return {
-        "n_points_raw": len(points),
-        "n_points": len(ds),
-        "t_utc": [p.t.isoformat().replace("+00:00", "Z") for p in ds],
-        "v": [p.v for p in ds],
-    }
+def delta_over_window(points: List[Tuple[str, float]]) -> Optional[float]:
+    if len(points) < 2:
+        return None
+    pts = sorted(points, key=lambda p: p[0])
+    return float(pts[-1][1] - pts[0][1])
 
 
 def main() -> int:
-    site_nos = [SITES[k]["site_no"] for k in SITES]
-    pcodes = [PCODE_GAGE_HEIGHT_FT, PCODE_DISCHARGE_CFS]
+    start_dt = datetime.now(timezone.utc) - timedelta(days=7, hours=6)
 
-    payload = fetch_iv_json(site_nos, pcodes)
-    series = extract_series(payload)
+    site_csv = ",".join([v["site_no"] for v in SITES.values()])
+    param_csv = ",".join([PARAM_GAGE_HEIGHT, PARAM_DISCHARGE])
 
-    out: Dict[str, Any] = {
+    payload = fetch_usgs_iv(site_csv, param_csv, start_dt)
+    series = parse_timeseries(payload)
+
+    out: Dict[str, object] = {
         "generated_at_utc": utc_now_iso(),
-        "period": PERIOD,
         "source": {
-            "provider": "USGS Water Services NWIS IV",
-            "endpoint": USGS_IV_URL,
-            "parameter_codes": {
-                "gage_height_ft": PCODE_GAGE_HEIGHT_FT,
-                "discharge_cfs": PCODE_DISCHARGE_CFS,
+            "provider": "USGS NWIS Instantaneous Values",
+            "endpoint": USGS_IV_JSON,
+            "start_dt_utc": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "parameters": {
+                "00065": "gage height feet",
+                "00060": "discharge cubic feet per second",
             },
         },
         "sites": {},
@@ -191,39 +138,50 @@ def main() -> int:
 
     for key, meta in SITES.items():
         site_no = meta["site_no"]
-        site_block: Dict[str, Any] = {
+        label = meta["label"]
+
+        gh_points = series.get((site_no, PARAM_GAGE_HEIGHT), [])
+        q_points = series.get((site_no, PARAM_DISCHARGE), [])
+
+        gh_latest_t, gh_latest_v, gh_earliest_t, gh_earliest_v = latest_and_earliest(gh_points)
+        q_latest_t, q_latest_v, q_earliest_t, q_earliest_v = latest_and_earliest(q_points)
+
+        site_obj: Dict[str, object] = {
             "site_no": site_no,
-            "label": meta["label"],
-            "gage_height_ft": None,
-            "discharge_cfs": None,
+            "label": label,
+            "gage_height_ft": {
+                "latest_time": gh_latest_t,
+                "latest_value": gh_latest_v,
+                "earliest_time": gh_earliest_t,
+                "earliest_value": gh_earliest_v,
+                "delta_7d": delta_over_window(gh_points),
+                "series_7d": [{"t": t, "v": v} for (t, v) in sorted(gh_points, key=lambda p: p[0])],
+            },
+            "discharge_cfs": {
+                "latest_time": q_latest_t,
+                "latest_value": q_latest_v,
+                "earliest_time": q_earliest_t,
+                "earliest_value": q_earliest_v,
+                "delta_7d": delta_over_window(q_points),
+                "series_7d": [{"t": t, "v": v} for (t, v) in sorted(q_points, key=lambda p: p[0])],
+            },
         }
 
-        gh = series.get((site_no, PCODE_GAGE_HEIGHT_FT))
-        if gh:
-            site_block["gage_height_ft"] = summarize(gh)
-            site_block["gage_height_ft"]["series_7d"] = build_series(gh)
+        if gh_latest_v is None:
+            site_obj["gage_height_ft"]["note"] = "gage height missing in this pull, discharge may still be available"
 
-        q = series.get((site_no, PCODE_DISCHARGE_CFS))
-        if q:
-            site_block["discharge_cfs"] = summarize(q)
-            site_block["discharge_cfs"]["series_7d"] = build_series(q)
-
-        out["sites"][key] = site_block
+        out["sites"][key] = site_obj
 
     os.makedirs("data", exist_ok=True)
-    with open("data/river_status.json", "w", encoding="utf-8") as f:
+    with open(OUT_STATUS, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
 
-    print("Wrote data/river_status.json")
+    print(f"Wrote {OUT_STATUS}")
+    for k in out["sites"]:
+        gh = out["sites"][k]["gage_height_ft"]
+        print(k, "gh_latest", gh.get("latest_value"), "points", len(gh.get("series_7d", [])))
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except requests.RequestException as e:
-        print(f"Network error {e}", file=sys.stderr)
-        raise SystemExit(3)
-    except Exception as e:
-        print(f"Unexpected error {e}", file=sys.stderr)
-        raise SystemExit(1)
+    raise SystemExit(main())
