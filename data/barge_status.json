@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-01-22T07:43:15.571577Z",
+  "generated_at_utc": "2026-01-22T07:55:48.888118Z",
   "sources": {
     "locks27_xlsx": "https://www.ams.usda.gov/sites/default/files/media/GTRFigure10.xlsx"
   },
@@ -8,6 +8,6 @@
     "value": 118.0,
     "delta_4w": -172.0,
     "unit": "tons",
-    "note": "Dropped trailing placeholder zero at 2024-01-27"
+    "note": "dropped trailing zero placeholder at 2024-01-27"
   }
 }
