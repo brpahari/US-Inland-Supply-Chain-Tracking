@@ -1,5 +1,3 @@
 requests
 pandas
 openpyxl
-lxml
-beautifulsoup4
